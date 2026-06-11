@@ -7,7 +7,7 @@ individual ports.
 
 Part of the *Clue* family — ships as a single Docker container.
 
-## Features (v0.3)
+## Features (v0.4)
 
 - **Tabs = racks.** Each tab is one rack; add, rename (double-click the tab) and
   delete racks.
@@ -27,8 +27,14 @@ Part of the *Clue* family — ships as a single Docker container.
 - **Port links.** Toggle *Link mode* and click any two ports to connect them;
   links are colored bezier lines routed on the right of the rack. Click a link to
   recolor, label or delete it.
-- **Light / dark theme** with a sun/moon toggle (persisted), plus version and a
-  GitHub link in the header — styled to match CargoClue.
+- **Edit mode.** Toggle *Edit mode* to drag devices to new U-positions; off by
+  default so the layout stays locked during normal use.
+- **Safe delete.** Removing a device requires typing `DELETE <name>` in a
+  confirmation dialog that spells out it also clears the device's VLANs, links
+  and client data.
+- **Light / dark theme** with a sun/moon toggle (persisted) — including the
+  faceplates — plus version and a GitHub link in the header, styled to match
+  CargoClue.
 
 Data is stored in SQLite on a persistent volume.
 

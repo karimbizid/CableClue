@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
-import { useDroppable } from '@dnd-kit/core';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
 import type { Cable, Device, Port, Rack, Vlan } from '../types';
 
 const ROW_H = 54; // pixels per rack unit
@@ -24,6 +24,7 @@ function Jack({
   showNum,
   selected,
   pending,
+  editMode,
   onClick,
   onHover,
   onLeave,
@@ -34,19 +35,19 @@ function Jack({
   showNum: boolean;
   selected: boolean;
   pending: boolean;
+  editMode: boolean;
   onClick: () => void;
   onHover: (e: MouseEvent) => void;
   onLeave: () => void;
 }) {
   const occupied = Boolean(port.client || port.ip);
-  const body = vlan ? vlan.color : '#11151c';
-  const stroke = vlan ? vlan.color : '#3a414f';
 
   return (
     <button
       className={`jack ${occupied ? 'occupied' : ''} ${selected ? 'sel' : ''} ${pending ? 'pending' : ''}`}
       data-port-id={port.id}
       title=""
+      style={editMode ? { pointerEvents: 'none' } : undefined}
       // Act on pointer-down: it fires reliably inside the dnd context, whereas
       // the synthetic click can get dropped by re-renders during the press.
       onPointerDown={(e) => {
@@ -59,8 +60,17 @@ function Jack({
       onMouseLeave={onLeave}
     >
       <svg viewBox="0 0 20 18" width="18" height="16" aria-hidden>
-        {/* jack body */}
-        <rect x="1.5" y="2.5" width="17" height="13" rx="1.6" fill={body} stroke={stroke} strokeWidth="1" />
+        {/* jack body — themed via CSS; a VLAN tints it inline */}
+        <rect
+          className="jack-body"
+          x="1.5"
+          y="2.5"
+          width="17"
+          height="13"
+          rx="1.6"
+          strokeWidth="1"
+          style={vlan ? { fill: vlan.color, stroke: vlan.color } : undefined}
+        />
         {/* gold contacts */}
         <g stroke="#caa24a" strokeWidth="0.7" opacity={vlan ? 0.85 : 0.55}>
           <line x1="4" y1="4" x2="4" y2="7" />
@@ -88,6 +98,7 @@ function DeviceFace({
   selectedDeviceId,
   selectedPortId,
   pendingPortId,
+  editMode,
   onDeviceClick,
   onPortClick,
   onDelete,
@@ -98,11 +109,17 @@ function DeviceFace({
   selectedDeviceId: number | null;
   selectedPortId: number | null;
   pendingPortId: number | null;
+  editMode: boolean;
   onDeviceClick: (d: Device) => void;
   onPortClick: (p: Port, d: Device) => void;
   onDelete: (id: number) => void;
   setHover: (h: HoverState) => void;
 }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `dev:${device.id}`,
+    data: { kind: 'device', deviceId: device.id, size_u: device.size_u },
+    disabled: !editMode,
+  });
   const top = device.position_u + device.size_u - 1;
   const range = device.size_u > 1 ? `${device.position_u}–${top}` : `${device.position_u}`;
 
@@ -118,11 +135,23 @@ function DeviceFace({
   const hoverHandler = (port: Port) => (e: MouseEvent) =>
     setHover({ port, vlan: port.vlan_id != null ? vlanById.get(port.vlan_id) : undefined, x: e.clientX, y: e.clientY });
 
+  const dragProps = editMode
+    ? { ...listeners, ...attributes }
+    : { onPointerDown: () => onDeviceClick(device) };
+
   return (
     <div
-      className={`device face ${device.type} ${device.id === selectedDeviceId ? 'sel' : ''}`}
-      style={{ height: device.size_u * ROW_H }}
-      onPointerDown={() => onDeviceClick(device)}
+      ref={setNodeRef}
+      className={`device face ${device.type} ${device.id === selectedDeviceId ? 'sel' : ''} ${
+        editMode ? 'editable' : ''
+      } ${isDragging ? 'dragging' : ''}`}
+      style={{
+        height: device.size_u * ROW_H,
+        ...(transform
+          ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20, position: 'relative' }
+          : null),
+      }}
+      {...dragProps}
     >
       <div className="face-info">
         <div className="face-leds">
@@ -158,6 +187,7 @@ function DeviceFace({
                   showNum={showNum}
                   selected={col.topPort.id === selectedPortId}
                   pending={col.topPort.id === pendingPortId}
+                  editMode={editMode}
                   onClick={() => onPortClick(col.topPort!, device)}
                   onHover={hoverHandler(col.topPort)}
                   onLeave={() => setHover(null)}
@@ -173,6 +203,7 @@ function DeviceFace({
                   showNum={showNum}
                   selected={col.botPort.id === selectedPortId}
                   pending={col.botPort.id === pendingPortId}
+                  editMode={editMode}
                   onClick={() => onPortClick(col.botPort!, device)}
                   onHover={hoverHandler(col.botPort)}
                   onLeave={() => setHover(null)}
@@ -230,6 +261,7 @@ export function RackView({
   pendingPortId,
   selectedCableId,
   linkMode,
+  editMode,
   onDeviceClick,
   onPortClick,
   onDeleteDevice,
@@ -241,6 +273,7 @@ export function RackView({
   pendingPortId: number | null;
   selectedCableId: number | null;
   linkMode: boolean;
+  editMode: boolean;
   onDeviceClick: (d: Device) => void;
   onPortClick: (p: Port, d: Device) => void;
   onDeleteDevice: (id: number) => void;
@@ -270,6 +303,7 @@ export function RackView({
           selectedDeviceId={selectedDeviceId}
           selectedPortId={selectedPortId}
           pendingPortId={pendingPortId}
+          editMode={editMode}
           onDeviceClick={onDeviceClick}
           onPortClick={onPortClick}
           onDelete={onDeleteDevice}

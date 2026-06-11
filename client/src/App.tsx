@@ -8,6 +8,7 @@ import { Library } from './components/Library';
 import { RackView } from './components/RackView';
 import { Inspector } from './components/Inspector';
 import { VlanManager } from './components/VlanManager';
+import { DeleteDeviceModal } from './components/DeleteDeviceModal';
 
 const THEME_KEY = 'cableclue.theme';
 const CABLE_COLORS = ['#e3b341', '#58a6ff', '#3fb950', '#f85149', '#a371f7', '#ec6cb9'];
@@ -22,8 +23,10 @@ export default function App() {
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [linkMode, setLinkMode] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [pendingPort, setPendingPort] = useState<{ portId: number; deviceId: number } | null>(null);
   const [vlanOpen, setVlanOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Device | null>(null);
 
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [version, setVersion] = useState('');
@@ -125,11 +128,19 @@ export default function App() {
 
   function startLinkFromPort(portId: number, deviceId: number) {
     setLinkMode(true);
+    setEditMode(false);
     setPendingPort({ portId, deviceId });
   }
 
   function toggleLinkMode() {
     setLinkMode((v) => !v);
+    setEditMode(false);
+    setPendingPort(null);
+  }
+
+  function toggleEditMode() {
+    setEditMode((v) => !v);
+    setLinkMode(false);
     setPendingPort(null);
   }
 
@@ -139,11 +150,24 @@ export default function App() {
   }
   async function onDragEnd(e: DragEndEvent) {
     setDraggingTemplate(null);
-    const tpl = e.active.data.current?.template as DeviceTemplate | undefined;
+    const data = e.active.data.current;
     const overId = e.over?.id;
-    if (!tpl || !rack || typeof overId !== 'string' || !overId.startsWith('u:')) return;
+    if (!rack || typeof overId !== 'string' || !overId.startsWith('u:')) return;
     const topU = parseInt(overId.slice(2), 10);
-    if (!canPlace(rack, topU, tpl.size_u)) return;
+
+    // Moving an existing device within the rack (edit mode).
+    if (data?.kind === 'device') {
+      const dev = rack.devices.find((d) => d.id === data.deviceId);
+      if (dev && dev.position_u !== topU && canPlace(rack, topU, dev.size_u, dev.id)) {
+        await api.updateDevice(dev.id, { position_u: topU });
+        reload();
+      }
+      return;
+    }
+
+    // Dropping a new template from the library.
+    const tpl = data?.template as DeviceTemplate | undefined;
+    if (!tpl || !canPlace(rack, topU, tpl.size_u)) return;
     await api.createDevice(rack.id, {
       type: tpl.type,
       port_count: tpl.port_count,
@@ -231,12 +255,22 @@ export default function App() {
                 ☰
               </button>
               <button
+                className={`tool-btn ${editMode ? 'active' : ''}`}
+                onClick={toggleEditMode}
+                title="Edit mode: drag devices to reposition them"
+              >
+                ✥ Edit mode
+              </button>
+              <button
                 className={`tool-btn ${linkMode ? 'active' : ''}`}
                 onClick={toggleLinkMode}
                 title="Link mode: click any two ports to link them"
               >
                 🔌 Link mode
               </button>
+              {editMode && (
+                <span className="link-banner edit">Drag any device to reposition it in the rack.</span>
+              )}
               {linkMode && (
                 <span className="link-banner">
                   {pendingInfo ? (
@@ -269,12 +303,12 @@ export default function App() {
                   pendingPortId={pendingPort?.portId ?? null}
                   selectedCableId={selectedCableId}
                   linkMode={linkMode}
+                  editMode={editMode}
                   onDeviceClick={selectDevice}
                   onPortClick={onPortClick}
-                  onDeleteDevice={async (id) => {
-                    await api.deleteDevice(id);
-                    if (selection?.type === 'device' && selection.id === id) setSelection(null);
-                    reload();
+                  onDeleteDevice={(id) => {
+                    const d = rack.devices.find((x) => x.id === id);
+                    if (d) setDeleteTarget(d);
                   }}
                   onSelectCable={(id) => setSelection({ type: 'cable', id })}
                 />
@@ -290,6 +324,7 @@ export default function App() {
               onReload={reload}
               onClear={() => setSelection(null)}
               onStartCable={startLinkFromPort}
+              onRequestDelete={(d) => setDeleteTarget(d)}
             />
           )}
         </div>
@@ -302,14 +337,34 @@ export default function App() {
       {vlanOpen && rack && (
         <VlanManager rack={rack} onClose={() => setVlanOpen(false)} onChanged={reload} />
       )}
+
+      {deleteTarget && (
+        <DeleteDeviceModal
+          device={deleteTarget}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={async () => {
+            const id = deleteTarget.id;
+            await api.deleteDevice(id);
+            if (
+              (selection?.type === 'device' && selection.id === id) ||
+              (selection?.type === 'port' && selection.deviceId === id)
+            ) {
+              setSelection(null);
+            }
+            setDeleteTarget(null);
+            reload();
+          }}
+        />
+      )}
     </DndContext>
   );
 }
 
-function canPlace(rack: Rack, topU: number, size: number): boolean {
+function canPlace(rack: Rack, topU: number, size: number, excludeId?: number): boolean {
   if (topU < 1 || topU + size - 1 > rack.height_u) return false;
   const occupied = new Set<number>();
   for (const d of rack.devices) {
+    if (d.id === excludeId) continue;
     for (let u = d.position_u; u < d.position_u + d.size_u; u++) occupied.add(u);
   }
   for (let u = topU; u < topU + size; u++) {

@@ -11,12 +11,14 @@ export function Inspector({
   onReload,
   onClear,
   onStartCable,
+  onRequestDelete,
 }: {
   rack: Rack;
   selection: Selection | null;
   onReload: () => void;
   onClear: () => void;
   onStartCable: (portId: number, deviceId: number) => void;
+  onRequestDelete: (device: Device) => void;
 }) {
   const device =
     selection?.type === 'device'
@@ -43,7 +45,12 @@ export function Inspector({
       <div className="insp-body">
         {!selection && <p className="insp-hint">Select a device, a port or a cable to edit it here.</p>}
         {selection?.type === 'device' && device && (
-          <DeviceEditor key={`d${device.id}`} device={device} onReload={onReload} onClear={onClear} />
+          <DeviceEditor
+            key={`d${device.id}`}
+            device={device}
+            onReload={onReload}
+            onRequestDelete={onRequestDelete}
+          />
         )}
         {selection?.type === 'port' && port && device && (
           <PortEditor
@@ -66,11 +73,11 @@ export function Inspector({
 function DeviceEditor({
   device,
   onReload,
-  onClear,
+  onRequestDelete,
 }: {
   device: Device;
   onReload: () => void;
-  onClear: () => void;
+  onRequestDelete: (device: Device) => void;
 }) {
   const [name, setName] = useState(device.name);
   const [manufacturer, setManufacturer] = useState(device.manufacturer);
@@ -105,11 +112,8 @@ function DeviceEditor({
     }
   }
 
-  async function remove() {
-    if (!confirm('Remove this device from the rack?')) return;
-    await api.deleteDevice(device.id);
-    onClear();
-    onReload();
+  function remove() {
+    onRequestDelete(device);
   }
 
   return (
