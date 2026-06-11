@@ -1,4 +1,4 @@
-import type { Device, Port, Rack, RackSummary, Vlan } from './types';
+import type { Cable, Device, Port, Rack, RackSummary, Vlan } from './types';
 
 async function req<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -42,4 +42,17 @@ export const api = {
   // Ports
   updatePort: (id: number, patch: Partial<Pick<Port, 'vlan_id' | 'ip' | 'client' | 'label'>>) =>
     req<Port>(`/api/ports/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+
+  // Cables
+  createCable: (rackId: number, a_port_id: number, b_port_id: number, color: string) =>
+    req<Cable>(`/api/racks/${rackId}/cables`, {
+      method: 'POST',
+      body: JSON.stringify({ a_port_id, b_port_id, color }),
+    }),
+  updateCable: (id: number, patch: Partial<Pick<Cable, 'color' | 'label'>>) =>
+    req<Cable>(`/api/cables/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  deleteCable: (id: number) => req<void>(`/api/cables/${id}`, { method: 'DELETE' }),
+
+  // Misc
+  getVersion: () => req<{ version: string }>('/api/version'),
 };

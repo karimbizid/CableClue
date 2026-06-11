@@ -7,7 +7,7 @@ individual ports.
 
 Part of the *Clue* family — ships as a single Docker container.
 
-## Features (v0.1)
+## Features (v0.3)
 
 - **Tabs = racks.** Each tab is one rack; add, rename (double-click the tab) and
   delete racks.
@@ -15,14 +15,20 @@ Part of the *Clue* family — ships as a single Docker container.
   - Switches: 8p, 24p, 48p
   - Patch panels: 24p (1U), 48p (2U)
   - Blind panels: 1U, 2U
-- **Visual rack.** Standard 19" units; devices snap to free U-slots and can't
-  overlap.
-- **Device inspector.** Click a device to set name, manufacturer, model,
-  management IP and notes. The name shows on the device in the rack.
-- **Port editor.** Click a network port to assign a VLAN, IP and client. Ports
-  are colored by their VLAN.
-- **VLANs per rack.** Define a VLAN list per rack (tag, name, color) via the
-  top-right button.
+- **Graphical faceplates.** Switches and patch panels render as realistic
+  faceplates with SVG RJ45 jacks, status LEDs and per-port link LEDs. Hover a
+  port for a VLAN/IP/client tooltip.
+- **Right-hand inspector panel.** Click a device, port or cable to edit it in the
+  persistent inspector on the right (no pop-ups).
+- **Manufacturer / model library.** Pick from common Netgear, Cisco, Aruba,
+  Yamaha, UniFi (Pro), Luminex (+ MikroTik, Extreme, TP-Link Omada) models, or
+  type a custom model.
+- **VLANs per rack** (tag, name, color); ports are tinted by their VLAN.
+- **Port links.** Toggle *Link mode* and click any two ports to connect them;
+  links are colored bezier lines routed on the right of the rack. Click a link to
+  recolor, label or delete it.
+- **Light / dark theme** with a sun/moon toggle (persisted), plus version and a
+  GitHub link in the header — styled to match CargoClue.
 
 Data is stored in SQLite on a persistent volume.
 

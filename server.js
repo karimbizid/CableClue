@@ -9,6 +9,9 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
+const VERSION = require('./package.json').version;
+
+app.get('/api/version', (req, res) => res.json({ version: VERSION }));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,7 +38,9 @@ function getRackFull(rackId) {
     d.ports = portsByDevice.all(d.id);
   }
 
-  return { ...rack, vlans, devices };
+  const cables = db.prepare('SELECT * FROM cables WHERE rack_id = ?').all(rackId);
+
+  return { ...rack, vlans, devices, cables };
 }
 
 function asInt(v, fallback) {
@@ -200,6 +205,42 @@ app.put('/api/ports/:id', (req, res) => {
   db.prepare('UPDATE ports SET vlan_id = ?, ip = ?, client = ?, label = ? WHERE id = ?')
     .run(vlan_id, ip, client, label, id);
   res.json(db.prepare('SELECT * FROM ports WHERE id = ?').get(id));
+});
+
+// ---------------------------------------------------------------------------
+// Cables (switch-to-switch links, scoped to a rack)
+// ---------------------------------------------------------------------------
+
+app.post('/api/racks/:id/cables', (req, res) => {
+  const rackId = asInt(req.params.id);
+  const rack = db.prepare('SELECT id FROM racks WHERE id = ?').get(rackId);
+  if (!rack) return res.status(404).json({ error: 'rack not found' });
+  const a = asInt(req.body.a_port_id, NaN);
+  const b = asInt(req.body.b_port_id, NaN);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) {
+    return res.status(400).json({ error: 'two distinct ports required' });
+  }
+  const color = (req.body.color || '#e3b341').toString();
+  const label = (req.body.label || '').toString();
+  const info = db
+    .prepare('INSERT INTO cables (rack_id, a_port_id, b_port_id, color, label) VALUES (?, ?, ?, ?, ?)')
+    .run(rackId, a, b, color, label);
+  res.status(201).json(db.prepare('SELECT * FROM cables WHERE id = ?').get(info.lastInsertRowid));
+});
+
+app.put('/api/cables/:id', (req, res) => {
+  const id = asInt(req.params.id);
+  const c = db.prepare('SELECT * FROM cables WHERE id = ?').get(id);
+  if (!c) return res.status(404).json({ error: 'cable not found' });
+  const color = req.body.color !== undefined ? req.body.color.toString() : c.color;
+  const label = req.body.label !== undefined ? req.body.label.toString() : c.label;
+  db.prepare('UPDATE cables SET color = ?, label = ? WHERE id = ?').run(color, label, id);
+  res.json(db.prepare('SELECT * FROM cables WHERE id = ?').get(id));
+});
+
+app.delete('/api/cables/:id', (req, res) => {
+  db.prepare('DELETE FROM cables WHERE id = ?').run(asInt(req.params.id));
+  res.status(204).end();
 });
 
 // ---------------------------------------------------------------------------

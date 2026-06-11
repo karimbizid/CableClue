@@ -33,6 +33,15 @@ export interface Vlan {
   color: string;
 }
 
+export interface Cable {
+  id: number;
+  rack_id: number;
+  a_port_id: number;
+  b_port_id: number;
+  color: string;
+  label: string;
+}
+
 export interface RackSummary {
   id: number;
   name: string;
@@ -43,7 +52,14 @@ export interface RackSummary {
 export interface Rack extends RackSummary {
   vlans: Vlan[];
   devices: Device[];
+  cables: Cable[];
 }
+
+// What the right-hand inspector panel is currently editing.
+export type Selection =
+  | { type: 'device'; id: number }
+  | { type: 'port'; id: number; deviceId: number }
+  | { type: 'cable'; id: number };
 
 // A draggable item from the library sidebar.
 export interface DeviceTemplate {

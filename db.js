@@ -54,9 +54,21 @@ db.exec(`
     label     TEXT    NOT NULL DEFAULT ''
   );
 
+  -- Cables connect two switch ports (uplinks). Stored by port id; deleting
+  -- either device/port removes the cable via cascade.
+  CREATE TABLE IF NOT EXISTS cables (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    rack_id   INTEGER NOT NULL REFERENCES racks(id) ON DELETE CASCADE,
+    a_port_id INTEGER NOT NULL REFERENCES ports(id) ON DELETE CASCADE,
+    b_port_id INTEGER NOT NULL REFERENCES ports(id) ON DELETE CASCADE,
+    color     TEXT    NOT NULL DEFAULT '#e3b341',
+    label     TEXT    NOT NULL DEFAULT ''
+  );
+
   CREATE INDEX IF NOT EXISTS idx_devices_rack ON devices(rack_id);
   CREATE INDEX IF NOT EXISTS idx_ports_device ON ports(device_id);
   CREATE INDEX IF NOT EXISTS idx_vlans_rack   ON vlans(rack_id);
+  CREATE INDEX IF NOT EXISTS idx_cables_rack  ON cables(rack_id);
 `);
 
 module.exports = db;

@@ -1,6 +1,6 @@
-import { useState, type MouseEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import type { Device, Port, Rack, Vlan } from '../types';
+import type { Cable, Device, Port, Rack, Vlan } from '../types';
 
 const ROW_H = 54; // pixels per rack unit
 
@@ -22,6 +22,8 @@ function Jack({
   vlan,
   variant,
   showNum,
+  selected,
+  pending,
   onClick,
   onHover,
   onLeave,
@@ -30,6 +32,8 @@ function Jack({
   vlan: Vlan | undefined;
   variant: 'switch' | 'patch';
   showNum: boolean;
+  selected: boolean;
+  pending: boolean;
   onClick: () => void;
   onHover: (e: MouseEvent) => void;
   onLeave: () => void;
@@ -40,12 +44,16 @@ function Jack({
 
   return (
     <button
-      className={`jack ${occupied ? 'occupied' : ''}`}
+      className={`jack ${occupied ? 'occupied' : ''} ${selected ? 'sel' : ''} ${pending ? 'pending' : ''}`}
+      data-port-id={port.id}
       title=""
-      onClick={(e) => {
+      // Act on pointer-down: it fires reliably inside the dnd context, whereas
+      // the synthetic click can get dropped by re-renders during the press.
+      onPointerDown={(e) => {
         e.stopPropagation();
         onClick();
       }}
+      onClick={(e) => e.stopPropagation()}
       onMouseEnter={onHover}
       onMouseMove={onHover}
       onMouseLeave={onLeave}
@@ -77,6 +85,9 @@ function Jack({
 function DeviceFace({
   device,
   vlanById,
+  selectedDeviceId,
+  selectedPortId,
+  pendingPortId,
   onDeviceClick,
   onPortClick,
   onDelete,
@@ -84,6 +95,9 @@ function DeviceFace({
 }: {
   device: Device;
   vlanById: Map<number, Vlan>;
+  selectedDeviceId: number | null;
+  selectedPortId: number | null;
+  pendingPortId: number | null;
   onDeviceClick: (d: Device) => void;
   onPortClick: (p: Port, d: Device) => void;
   onDelete: (id: number) => void;
@@ -106,9 +120,9 @@ function DeviceFace({
 
   return (
     <div
-      className={`device face ${device.type}`}
+      className={`device face ${device.type} ${device.id === selectedDeviceId ? 'sel' : ''}`}
       style={{ height: device.size_u * ROW_H }}
-      onClick={() => onDeviceClick(device)}
+      onPointerDown={() => onDeviceClick(device)}
     >
       <div className="face-info">
         <div className="face-leds">
@@ -142,6 +156,8 @@ function DeviceFace({
                   vlan={col.topPort.vlan_id != null ? vlanById.get(col.topPort.vlan_id) : undefined}
                   variant={variant}
                   showNum={showNum}
+                  selected={col.topPort.id === selectedPortId}
+                  pending={col.topPort.id === pendingPortId}
                   onClick={() => onPortClick(col.topPort!, device)}
                   onHover={hoverHandler(col.topPort)}
                   onLeave={() => setHover(null)}
@@ -155,6 +171,8 @@ function DeviceFace({
                   vlan={col.botPort.vlan_id != null ? vlanById.get(col.botPort.vlan_id) : undefined}
                   variant={variant}
                   showNum={showNum}
+                  selected={col.botPort.id === selectedPortId}
+                  pending={col.botPort.id === pendingPortId}
                   onClick={() => onPortClick(col.botPort!, device)}
                   onHover={hoverHandler(col.botPort)}
                   onLeave={() => setHover(null)}
@@ -172,6 +190,7 @@ function DeviceFace({
         <button
           className="device-del"
           title="Remove device"
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onDelete(device.id);
@@ -206,16 +225,29 @@ function PortTooltip({ hover }: { hover: NonNullable<HoverState> }) {
 
 export function RackView({
   rack,
+  selectedDeviceId,
+  selectedPortId,
+  pendingPortId,
+  selectedCableId,
+  linkMode,
   onDeviceClick,
   onPortClick,
   onDeleteDevice,
+  onSelectCable,
 }: {
   rack: Rack;
+  selectedDeviceId: number | null;
+  selectedPortId: number | null;
+  pendingPortId: number | null;
+  selectedCableId: number | null;
+  linkMode: boolean;
   onDeviceClick: (d: Device) => void;
   onPortClick: (p: Port, d: Device) => void;
   onDeleteDevice: (id: number) => void;
+  onSelectCable: (id: number) => void;
 }) {
   const [hover, setHover] = useState<HoverState>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const vlanById = new Map(rack.vlans.map((v) => [v.id, v]));
 
   const deviceByTop = new Map<number, Device>();
@@ -235,6 +267,9 @@ export function RackView({
           key={`d${dev.id}`}
           device={dev}
           vlanById={vlanById}
+          selectedDeviceId={selectedDeviceId}
+          selectedPortId={selectedPortId}
+          pendingPortId={pendingPortId}
           onDeviceClick={onDeviceClick}
           onPortClick={onPortClick}
           onDelete={onDeleteDevice}
@@ -246,13 +281,100 @@ export function RackView({
     }
   }
 
+  // A compact signature of the layout so the cable overlay re-measures when
+  // devices are added/removed/moved (port wrapping can shift positions).
+  const layoutKey = rack.devices.map((d) => `${d.id}:${d.position_u}:${d.size_u}`).join('|');
+
   return (
-    <div className="rack">
+    <div className={`rack ${linkMode ? 'link-mode' : ''}`}>
       <div className="rack-title">
         {rack.name} <span className="rack-sub">{rack.height_u}U</span>
       </div>
-      <div className="rack-frame">{rows}</div>
+      <div className="rack-frame" ref={frameRef}>
+        {rows}
+        <CableLayer
+          frameRef={frameRef}
+          cables={rack.cables}
+          layoutKey={layoutKey}
+          selectedCableId={selectedCableId}
+          onSelectCable={onSelectCable}
+        />
+      </div>
       {hover && <PortTooltip hover={hover} />}
     </div>
+  );
+}
+
+type CablePath = { id: number; d: string; color: string; selected: boolean };
+
+function CableLayer({
+  frameRef,
+  cables,
+  layoutKey,
+  selectedCableId,
+  onSelectCable,
+}: {
+  frameRef: RefObject<HTMLDivElement>;
+  cables: Cable[];
+  layoutKey: string;
+  selectedCableId: number | null;
+  onSelectCable: (id: number) => void;
+}) {
+  const [paths, setPaths] = useState<CablePath[]>([]);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+
+    const measure = () => {
+      const fr = frame.getBoundingClientRect();
+      setSize({ w: frame.clientWidth, h: frame.clientHeight });
+      const next: CablePath[] = [];
+      for (const c of cables) {
+        const ae = frame.querySelector(`[data-port-id="${c.a_port_id}"]`);
+        const be = frame.querySelector(`[data-port-id="${c.b_port_id}"]`);
+        if (!ae || !be) continue;
+        const ra = ae.getBoundingClientRect();
+        const rb = be.getBoundingClientRect();
+        const ax = ra.left + ra.width / 2 - fr.left;
+        const ay = ra.top + ra.height / 2 - fr.top;
+        const bx = rb.left + rb.width / 2 - fr.left;
+        const by = rb.top + rb.height / 2 - fr.top;
+        // Loop the cable out to the right (like real rack uplinks).
+        const out = Math.max(36, Math.abs(by - ay) * 0.5);
+        const cx = Math.max(ax, bx) + out;
+        const d = `M ${ax} ${ay} C ${cx} ${ay}, ${cx} ${by}, ${bx} ${by}`;
+        next.push({ id: c.id, d, color: c.color, selected: c.id === selectedCableId });
+      }
+      setPaths(next);
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(frame);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [frameRef, cables, layoutKey, selectedCableId]);
+
+  return (
+    <svg className="cable-layer" width={size.w} height={size.h} viewBox={`0 0 ${size.w} ${size.h}`}>
+      {paths.map((p) => (
+        <g key={p.id}>
+          <path
+            d={p.d}
+            className="cable-hit"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              onSelectCable(p.id);
+            }}
+          />
+          <path d={p.d} stroke={p.color} className={`cable-line ${p.selected ? 'sel' : ''}`} />
+        </g>
+      ))}
+    </svg>
   );
 }
