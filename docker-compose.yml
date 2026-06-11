@@ -1,0 +1,19 @@
+services:
+  cableclue:
+    build: .
+    image: cableclue
+    container_name: cableclue
+    restart: unless-stopped
+    ports:
+      # HOST:CONTAINER — left is the port on your machine, right is the port
+      # the app listens on inside the container (must match PORT below).
+      - "8080:8080"
+    volumes:
+      # Persist the SQLite database across container rebuilds.
+      - cableclue-data:/data
+    environment:
+      - PORT=8080
+      - DATA_DIR=/data
+
+volumes:
+  cableclue-data:
