@@ -1,4 +1,4 @@
-import type { Cable, Device, Port, Rack, RackSummary, Vlan } from './types';
+import type { Cable, Device, Port, Project, Rack, RackSummary, Vlan } from './types';
 
 async function req<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -14,18 +14,37 @@ async function req<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  // Racks
-  listRacks: () => req<RackSummary[]>('/api/racks'),
+  // Projects
+  listProjects: () => req<Project[]>('/api/projects'),
+  createProject: (name: string) =>
+    req<Project>('/api/projects', { method: 'POST', body: JSON.stringify({ name }) }),
+  updateProject: (id: number, name: string) =>
+    req<Project>(`/api/projects/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+  deleteProject: (id: number) => req<void>(`/api/projects/${id}`, { method: 'DELETE' }),
+  exportProject: (id: number) => req<unknown>(`/api/projects/${id}/export`),
+  importNewProject: (data: unknown, name?: string) =>
+    req<Project>('/api/projects/import', { method: 'POST', body: JSON.stringify({ data, name }) }),
+  importIntoProject: (id: number, data: unknown, parts: { racks: boolean; vlans: boolean }) =>
+    req<{ ok: boolean }>(`/api/projects/${id}/import`, {
+      method: 'POST',
+      body: JSON.stringify({ data, parts }),
+    }),
+
+  // Racks (scoped to a project)
+  listRacks: (projectId: number) => req<RackSummary[]>(`/api/projects/${projectId}/racks`),
   getRack: (id: number) => req<Rack>(`/api/racks/${id}`),
-  createRack: (name: string, height_u = 42) =>
-    req<Rack>('/api/racks', { method: 'POST', body: JSON.stringify({ name, height_u }) }),
+  createRack: (projectId: number, name: string, height_u = 42) =>
+    req<Rack>(`/api/projects/${projectId}/racks`, {
+      method: 'POST',
+      body: JSON.stringify({ name, height_u }),
+    }),
   updateRack: (id: number, patch: Partial<Pick<Rack, 'name' | 'height_u' | 'position'>>) =>
     req<Rack>(`/api/racks/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
   deleteRack: (id: number) => req<void>(`/api/racks/${id}`, { method: 'DELETE' }),
 
-  // VLANs
-  createVlan: (rackId: number, v: Pick<Vlan, 'tag' | 'name' | 'color'>) =>
-    req<Vlan>(`/api/racks/${rackId}/vlans`, { method: 'POST', body: JSON.stringify(v) }),
+  // VLANs (scoped to a project)
+  createVlan: (projectId: number, v: Pick<Vlan, 'tag' | 'name' | 'color'>) =>
+    req<Vlan>(`/api/projects/${projectId}/vlans`, { method: 'POST', body: JSON.stringify(v) }),
   updateVlan: (id: number, patch: Partial<Pick<Vlan, 'tag' | 'name' | 'color'>>) =>
     req<Vlan>(`/api/vlans/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
   deleteVlan: (id: number) => req<void>(`/api/vlans/${id}`, { method: 'DELETE' }),

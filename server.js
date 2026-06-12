@@ -6,7 +6,7 @@ const express = require('express');
 const db = require('./db');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
 
 const PORT = process.env.PORT || 8080;
 const VERSION = require('./package.json').version;
@@ -17,62 +17,92 @@ app.get('/api/version', (req, res) => res.json({ version: VERSION }));
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Build the full nested representation of a rack: devices (each with their
-// ports) and the rack-level VLAN list. This is what a tab loads.
+function asInt(v, fallback) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+// Full nested representation of a rack: devices (with ports) plus the parent
+// project's VLAN pool. This is what a rack tab loads.
 function getRackFull(rackId) {
   const rack = db.prepare('SELECT * FROM racks WHERE id = ?').get(rackId);
   if (!rack) return null;
 
   const vlans = db
-    .prepare('SELECT * FROM vlans WHERE rack_id = ? ORDER BY tag')
-    .all(rackId);
+    .prepare('SELECT * FROM vlans WHERE project_id = ? ORDER BY tag')
+    .all(rack.project_id);
 
   const devices = db
     .prepare('SELECT * FROM devices WHERE rack_id = ? ORDER BY position_u')
     .all(rackId);
 
-  const portsByDevice = db.prepare(
-    'SELECT * FROM ports WHERE device_id = ? ORDER BY port_nr'
-  );
-  for (const d of devices) {
-    d.ports = portsByDevice.all(d.id);
-  }
+  const portsByDevice = db.prepare('SELECT * FROM ports WHERE device_id = ? ORDER BY port_nr');
+  for (const d of devices) d.ports = portsByDevice.all(d.id);
 
   const cables = db.prepare('SELECT * FROM cables WHERE rack_id = ?').all(rackId);
 
   return { ...rack, vlans, devices, cables };
 }
 
-function asInt(v, fallback) {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : fallback;
-}
+// ---------------------------------------------------------------------------
+// Projects
+// ---------------------------------------------------------------------------
+
+app.get('/api/projects', (req, res) => {
+  res.json(db.prepare('SELECT * FROM projects ORDER BY position, id').all());
+});
+
+app.post('/api/projects', (req, res) => {
+  const name = (req.body.name || 'New project').toString().trim() || 'New project';
+  const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) AS m FROM projects').get().m;
+  const info = db.prepare('INSERT INTO projects (name, position) VALUES (?, ?)').run(name, maxPos + 1);
+  res.status(201).json(db.prepare('SELECT * FROM projects WHERE id = ?').get(info.lastInsertRowid));
+});
+
+app.put('/api/projects/:id', (req, res) => {
+  const id = asInt(req.params.id);
+  const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
+  if (!p) return res.status(404).json({ error: 'project not found' });
+  const name = req.body.name !== undefined ? req.body.name.toString() : p.name;
+  db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, id);
+  res.json(db.prepare('SELECT * FROM projects WHERE id = ?').get(id));
+});
+
+app.delete('/api/projects/:id', (req, res) => {
+  db.prepare('DELETE FROM projects WHERE id = ?').run(asInt(req.params.id));
+  res.status(204).end();
+});
+
+app.get('/api/projects/:id/racks', (req, res) => {
+  const racks = db
+    .prepare('SELECT * FROM racks WHERE project_id = ? ORDER BY position, id')
+    .all(asInt(req.params.id));
+  res.json(racks);
+});
+
+app.post('/api/projects/:id/racks', (req, res) => {
+  const projectId = asInt(req.params.id);
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const name = (req.body.name || 'New rack').toString().trim() || 'New rack';
+  const height_u = asInt(req.body.height_u, 42);
+  const maxPos = db
+    .prepare('SELECT COALESCE(MAX(position), -1) AS m FROM racks WHERE project_id = ?')
+    .get(projectId).m;
+  const info = db
+    .prepare('INSERT INTO racks (project_id, name, height_u, position) VALUES (?, ?, ?, ?)')
+    .run(projectId, name, height_u, maxPos + 1);
+  res.status(201).json(getRackFull(info.lastInsertRowid));
+});
 
 // ---------------------------------------------------------------------------
 // Racks
 // ---------------------------------------------------------------------------
 
-app.get('/api/racks', (req, res) => {
-  const racks = db
-    .prepare('SELECT * FROM racks ORDER BY position, id')
-    .all();
-  res.json(racks);
-});
-
 app.get('/api/racks/:id', (req, res) => {
   const rack = getRackFull(asInt(req.params.id));
   if (!rack) return res.status(404).json({ error: 'rack not found' });
   res.json(rack);
-});
-
-app.post('/api/racks', (req, res) => {
-  const name = (req.body.name || 'New rack').toString().trim() || 'New rack';
-  const height_u = asInt(req.body.height_u, 42);
-  const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) AS m FROM racks').get().m;
-  const info = db
-    .prepare('INSERT INTO racks (name, height_u, position) VALUES (?, ?, ?)')
-    .run(name, height_u, maxPos + 1);
-  res.status(201).json(getRackFull(info.lastInsertRowid));
 });
 
 app.put('/api/racks/:id', (req, res) => {
@@ -82,8 +112,7 @@ app.put('/api/racks/:id', (req, res) => {
   const name = req.body.name !== undefined ? req.body.name.toString() : rack.name;
   const height_u = req.body.height_u !== undefined ? asInt(req.body.height_u, rack.height_u) : rack.height_u;
   const position = req.body.position !== undefined ? asInt(req.body.position, rack.position) : rack.position;
-  db.prepare('UPDATE racks SET name = ?, height_u = ?, position = ? WHERE id = ?')
-    .run(name, height_u, position, id);
+  db.prepare('UPDATE racks SET name = ?, height_u = ?, position = ? WHERE id = ?').run(name, height_u, position, id);
   res.json(getRackFull(id));
 });
 
@@ -93,19 +122,19 @@ app.delete('/api/racks/:id', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VLANs (scoped to a rack)
+// VLANs (scoped to a project)
 // ---------------------------------------------------------------------------
 
-app.post('/api/racks/:id/vlans', (req, res) => {
-  const rackId = asInt(req.params.id);
-  const rack = db.prepare('SELECT id FROM racks WHERE id = ?').get(rackId);
-  if (!rack) return res.status(404).json({ error: 'rack not found' });
+app.post('/api/projects/:id/vlans', (req, res) => {
+  const projectId = asInt(req.params.id);
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
   const tag = asInt(req.body.tag, 1);
   const name = (req.body.name || '').toString();
   const color = (req.body.color || '#3b82f6').toString();
   const info = db
-    .prepare('INSERT INTO vlans (rack_id, tag, name, color) VALUES (?, ?, ?, ?)')
-    .run(rackId, tag, name, color);
+    .prepare('INSERT INTO vlans (project_id, tag, name, color) VALUES (?, ?, ?, ?)')
+    .run(projectId, tag, name, color);
   res.status(201).json(db.prepare('SELECT * FROM vlans WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -195,20 +224,28 @@ app.put('/api/ports/:id', (req, res) => {
   const p = db.prepare('SELECT * FROM ports WHERE id = ?').get(id);
   if (!p) return res.status(404).json({ error: 'port not found' });
 
-  const vlan_id = req.body.vlan_id !== undefined
-    ? (req.body.vlan_id === null || req.body.vlan_id === '' ? null : asInt(req.body.vlan_id, null))
-    : p.vlan_id;
+  const vlan_id =
+    req.body.vlan_id !== undefined
+      ? req.body.vlan_id === null || req.body.vlan_id === ''
+        ? null
+        : asInt(req.body.vlan_id, null)
+      : p.vlan_id;
   const ip = req.body.ip !== undefined ? req.body.ip.toString() : p.ip;
   const client = req.body.client !== undefined ? req.body.client.toString() : p.client;
   const label = req.body.label !== undefined ? req.body.label.toString() : p.label;
 
-  db.prepare('UPDATE ports SET vlan_id = ?, ip = ?, client = ?, label = ? WHERE id = ?')
-    .run(vlan_id, ip, client, label, id);
+  db.prepare('UPDATE ports SET vlan_id = ?, ip = ?, client = ?, label = ? WHERE id = ?').run(
+    vlan_id,
+    ip,
+    client,
+    label,
+    id
+  );
   res.json(db.prepare('SELECT * FROM ports WHERE id = ?').get(id));
 });
 
 // ---------------------------------------------------------------------------
-// Cables (switch-to-switch links, scoped to a rack)
+// Cables
 // ---------------------------------------------------------------------------
 
 app.post('/api/racks/:id/cables', (req, res) => {
@@ -241,6 +278,200 @@ app.put('/api/cables/:id', (req, res) => {
 app.delete('/api/cables/:id', (req, res) => {
   db.prepare('DELETE FROM cables WHERE id = ?').run(asInt(req.params.id));
   res.status(204).end();
+});
+
+// ---------------------------------------------------------------------------
+// Export / import (id-independent: ports reference VLANs by tag, cables by
+// device index + port number within their rack)
+// ---------------------------------------------------------------------------
+
+function buildProjectExport(projectId) {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+  if (!project) return null;
+
+  const vlanRows = db.prepare('SELECT * FROM vlans WHERE project_id = ? ORDER BY tag').all(projectId);
+  const vlanTagById = new Map(vlanRows.map((v) => [v.id, v.tag]));
+  const vlans = vlanRows.map((v) => ({ tag: v.tag, name: v.name, color: v.color }));
+
+  const racks = db.prepare('SELECT * FROM racks WHERE project_id = ? ORDER BY position, id').all(projectId);
+  const exportedRacks = racks.map((rack) => {
+    const devices = db.prepare('SELECT * FROM devices WHERE rack_id = ? ORDER BY position_u').all(rack.id);
+    const portLocByPortId = new Map(); // portId -> { deviceIdx, port_nr }
+    const exportedDevices = devices.map((d, deviceIdx) => {
+      const ports = db.prepare('SELECT * FROM ports WHERE device_id = ? ORDER BY port_nr').all(d.id);
+      const exportedPorts = ports.map((p) => {
+        portLocByPortId.set(p.id, { deviceIdx, port_nr: p.port_nr });
+        return {
+          port_nr: p.port_nr,
+          vlanTag: p.vlan_id != null ? vlanTagById.get(p.vlan_id) ?? null : null,
+          ip: p.ip,
+          client: p.client,
+          label: p.label,
+        };
+      });
+      return {
+        type: d.type,
+        port_count: d.port_count,
+        size_u: d.size_u,
+        position_u: d.position_u,
+        name: d.name,
+        manufacturer: d.manufacturer,
+        model: d.model,
+        mgmt_ip: d.mgmt_ip,
+        notes: d.notes,
+        ports: exportedPorts,
+      };
+    });
+
+    const cables = db.prepare('SELECT * FROM cables WHERE rack_id = ?').all(rack.id);
+    const exportedCables = cables
+      .map((c) => {
+        const a = portLocByPortId.get(c.a_port_id);
+        const b = portLocByPortId.get(c.b_port_id);
+        if (!a || !b) return null;
+        return { a, b, color: c.color, label: c.label };
+      })
+      .filter(Boolean);
+
+    return {
+      name: rack.name,
+      height_u: rack.height_u,
+      position: rack.position,
+      devices: exportedDevices,
+      cables: exportedCables,
+    };
+  });
+
+  return {
+    format: 'cableclue',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    project: { name: project.name },
+    vlans,
+    racks: exportedRacks,
+  };
+}
+
+// Insert VLANs from export data into a project, returning a tag -> vlan_id map
+// that also includes the project's already-existing VLANs.
+function importVlans(projectId, vlans) {
+  const map = new Map();
+  for (const v of db.prepare('SELECT id, tag FROM vlans WHERE project_id = ?').all(projectId)) {
+    map.set(v.tag, v.id);
+  }
+  const ins = db.prepare('INSERT INTO vlans (project_id, tag, name, color) VALUES (?, ?, ?, ?)');
+  for (const v of vlans || []) {
+    if (map.has(v.tag)) continue; // keep existing definition
+    const info = ins.run(projectId, asInt(v.tag, 0), (v.name || '').toString(), (v.color || '#3b82f6').toString());
+    map.set(v.tag, info.lastInsertRowid);
+  }
+  return map;
+}
+
+// Insert one rack (and its devices/ports/cables) into a project.
+function importRack(projectId, rackData, vlanByTag) {
+  const maxPos = db
+    .prepare('SELECT COALESCE(MAX(position), -1) AS m FROM racks WHERE project_id = ?')
+    .get(projectId).m;
+  const rackInfo = db
+    .prepare('INSERT INTO racks (project_id, name, height_u, position) VALUES (?, ?, ?, ?)')
+    .run(projectId, (rackData.name || 'Rack').toString(), asInt(rackData.height_u, 42), maxPos + 1);
+  const rackId = rackInfo.lastInsertRowid;
+
+  const insDevice = db.prepare(
+    `INSERT INTO devices (rack_id, type, port_count, size_u, position_u, name, manufacturer, model, mgmt_ip, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const insPort = db.prepare(
+    'INSERT INTO ports (device_id, port_nr, vlan_id, ip, client, label) VALUES (?, ?, ?, ?, ?, ?)'
+  );
+
+  const portIdByLoc = new Map(); // `${deviceIdx}:${port_nr}` -> portId
+  (rackData.devices || []).forEach((d, deviceIdx) => {
+    const devInfo = insDevice.run(
+      rackId,
+      (d.type || 'switch').toString(),
+      asInt(d.port_count, 0),
+      Math.max(1, asInt(d.size_u, 1)),
+      asInt(d.position_u, 1),
+      (d.name || '').toString(),
+      (d.manufacturer || '').toString(),
+      (d.model || '').toString(),
+      (d.mgmt_ip || '').toString(),
+      (d.notes || '').toString()
+    );
+    const deviceId = devInfo.lastInsertRowid;
+    for (const p of d.ports || []) {
+      const vlanId = p.vlanTag != null && vlanByTag.has(p.vlanTag) ? vlanByTag.get(p.vlanTag) : null;
+      const pInfo = insPort.run(
+        deviceId,
+        asInt(p.port_nr, 0),
+        vlanId,
+        (p.ip || '').toString(),
+        (p.client || '').toString(),
+        (p.label || '').toString()
+      );
+      portIdByLoc.set(`${deviceIdx}:${asInt(p.port_nr, 0)}`, pInfo.lastInsertRowid);
+    }
+  });
+
+  const insCable = db.prepare(
+    'INSERT INTO cables (rack_id, a_port_id, b_port_id, color, label) VALUES (?, ?, ?, ?, ?)'
+  );
+  for (const c of rackData.cables || []) {
+    const aId = portIdByLoc.get(`${c.a?.deviceIdx}:${c.a?.port_nr}`);
+    const bId = portIdByLoc.get(`${c.b?.deviceIdx}:${c.b?.port_nr}`);
+    if (aId && bId) insCable.run(rackId, aId, bId, (c.color || '#e3b341').toString(), (c.label || '').toString());
+  }
+}
+
+function validImport(data) {
+  return data && data.format === 'cableclue' && Array.isArray(data.racks);
+}
+
+// Full import → brand new project.
+const importNewProject = db.transaction((data, name) => {
+  const projName = (name || data.project?.name || 'Imported project').toString();
+  const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) AS m FROM projects').get().m;
+  const info = db.prepare('INSERT INTO projects (name, position) VALUES (?, ?)').run(projName, maxPos + 1);
+  const projectId = info.lastInsertRowid;
+  const vlanByTag = importVlans(projectId, data.vlans);
+  for (const rack of data.racks) importRack(projectId, rack, vlanByTag);
+  return projectId;
+});
+
+// Selective merge of chosen parts into an existing project.
+const importIntoProject = db.transaction((projectId, data, parts) => {
+  const vlanByTag = importVlans(projectId, parts.vlans ? data.vlans : []);
+  if (parts.racks) {
+    // Make sure rack ports can still resolve VLANs that exist in the file even
+    // if "vlans" wasn't ticked: fall back to whatever the project already has.
+    for (const rack of data.racks) importRack(projectId, rack, vlanByTag);
+  }
+});
+
+app.get('/api/projects/:id/export', (req, res) => {
+  const data = buildProjectExport(asInt(req.params.id));
+  if (!data) return res.status(404).json({ error: 'project not found' });
+  res.json(data);
+});
+
+app.post('/api/projects/import', (req, res) => {
+  const data = req.body.data;
+  if (!validImport(data)) return res.status(400).json({ error: 'not a valid CableClue export' });
+  const projectId = importNewProject(data, req.body.name);
+  res.status(201).json(db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId));
+});
+
+app.post('/api/projects/:id/import', (req, res) => {
+  const id = asInt(req.params.id);
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(id);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const data = req.body.data;
+  if (!validImport(data)) return res.status(400).json({ error: 'not a valid CableClue export' });
+  const parts = req.body.parts || { racks: true, vlans: true };
+  importIntoProject(id, data, parts);
+  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------

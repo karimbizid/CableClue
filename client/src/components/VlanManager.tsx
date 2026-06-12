@@ -20,7 +20,7 @@ export function VlanManager({
   async function add() {
     const tagNum = parseInt(tag, 10);
     if (!Number.isFinite(tagNum)) return;
-    await api.createVlan(rack.id, { tag: tagNum, name, color });
+    await api.createVlan(rack.project_id, { tag: tagNum, name, color });
     setTag('');
     setName('');
     onChanged();
@@ -35,7 +35,7 @@ export function VlanManager({
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
-          <h2>VLANs · {rack.name}</h2>
+          <h2>VLANs <span className="insp-sub">project-wide</span></h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </header>
         <div className="modal-body">

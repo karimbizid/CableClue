@@ -25,9 +25,15 @@ export interface Device {
   ports: Port[];
 }
 
+export interface Project {
+  id: number;
+  name: string;
+  position: number;
+}
+
 export interface Vlan {
   id: number;
-  rack_id: number;
+  project_id: number;
   tag: number;
   name: string;
   color: string;
@@ -44,6 +50,7 @@ export interface Cable {
 
 export interface RackSummary {
   id: number;
+  project_id: number;
   name: string;
   height_u: number;
   position: number;

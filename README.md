@@ -7,7 +7,17 @@ individual ports.
 
 Part of the *Clue* family — ships as a single Docker container.
 
-## Features (v0.4)
+## Features (v0.5)
+
+- **Projects.** Everything (racks, VLANs, devices, links) lives inside a project.
+  Switch projects from the header; a new project starts empty like a fresh
+  install. Export a project to a `.cableclue.json` file and import it again — as
+  a new project, or selectively merged into the current one (racks and/or VLANs),
+  from a file or another project in the same instance.
+- **VLANs are project-wide** (shared across all racks in the project).
+- **Cable visibility toggle.** Hide the cable overlay; linked ports then show an
+  `L` badge so you can still see what's connected.
+
 
 - **Tabs = racks.** Each tab is one rack; add, rename (double-click the tab) and
   delete racks.

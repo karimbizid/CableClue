@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import type { Cable, Device, Port, Rack, Vlan } from '../types';
 
@@ -25,6 +25,7 @@ function Jack({
   selected,
   pending,
   editMode,
+  linkBadge,
   onClick,
   onHover,
   onLeave,
@@ -36,6 +37,7 @@ function Jack({
   selected: boolean;
   pending: boolean;
   editMode: boolean;
+  linkBadge: boolean;
   onClick: () => void;
   onHover: (e: MouseEvent) => void;
   onLeave: () => void;
@@ -83,8 +85,14 @@ function Jack({
         {/* tab slot at the bottom */}
         <rect x="7.5" y="12" width="5" height="3.5" rx="0.6" fill="#05070a" opacity="0.8" />
         {/* link LED (switches only) */}
-        {variant === 'switch' && (
+        {variant === 'switch' && !linkBadge && (
           <circle cx="10" cy="9.6" r="1.5" fill={occupied ? '#22c55e' : '#1f2937'} />
+        )}
+        {/* "L" badge shown when the cables overlay is hidden */}
+        {linkBadge && (
+          <text className="link-badge-text" x="10" y="12" textAnchor="middle">
+            L
+          </text>
         )}
       </svg>
       {showNum && <span className="pnum">{port.port_nr}</span>}
@@ -99,6 +107,8 @@ function DeviceFace({
   selectedPortId,
   pendingPortId,
   editMode,
+  linkedPortIds,
+  showCables,
   onDeviceClick,
   onPortClick,
   onDelete,
@@ -110,6 +120,8 @@ function DeviceFace({
   selectedPortId: number | null;
   pendingPortId: number | null;
   editMode: boolean;
+  linkedPortIds: Set<number>;
+  showCables: boolean;
   onDeviceClick: (d: Device) => void;
   onPortClick: (p: Port, d: Device) => void;
   onDelete: (id: number) => void;
@@ -188,6 +200,7 @@ function DeviceFace({
                   selected={col.topPort.id === selectedPortId}
                   pending={col.topPort.id === pendingPortId}
                   editMode={editMode}
+                  linkBadge={!showCables && linkedPortIds.has(col.topPort.id)}
                   onClick={() => onPortClick(col.topPort!, device)}
                   onHover={hoverHandler(col.topPort)}
                   onLeave={() => setHover(null)}
@@ -204,6 +217,7 @@ function DeviceFace({
                   selected={col.botPort.id === selectedPortId}
                   pending={col.botPort.id === pendingPortId}
                   editMode={editMode}
+                  linkBadge={!showCables && linkedPortIds.has(col.botPort.id)}
                   onClick={() => onPortClick(col.botPort!, device)}
                   onHover={hoverHandler(col.botPort)}
                   onLeave={() => setHover(null)}
@@ -262,6 +276,7 @@ export function RackView({
   selectedCableId,
   linkMode,
   editMode,
+  showCables,
   onDeviceClick,
   onPortClick,
   onDeleteDevice,
@@ -274,6 +289,7 @@ export function RackView({
   selectedCableId: number | null;
   linkMode: boolean;
   editMode: boolean;
+  showCables: boolean;
   onDeviceClick: (d: Device) => void;
   onPortClick: (p: Port, d: Device) => void;
   onDeleteDevice: (id: number) => void;
@@ -282,6 +298,28 @@ export function RackView({
   const [hover, setHover] = useState<HoverState>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const vlanById = new Map(rack.vlans.map((v) => [v.id, v]));
+
+  // Remount the cable overlay once just after the rack first paints. Measuring
+  // in place is unreliable on first load in both Chrome and Firefox (the SVG
+  // doesn't repaint), but a fresh mount in the settled DOM draws every cable —
+  // the same thing the manual cables toggle does.
+  const cablesSig = rack.cables.map((c) => `${c.id}:${c.color}`).join(',');
+  const [overlayTick, setOverlayTick] = useState(0);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setOverlayTick((t) => t + 1));
+    const to = setTimeout(() => setOverlayTick((t) => t + 1), 150);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(to);
+    };
+  }, [rack.id, cablesSig]);
+
+  // Ports that are an endpoint of any cable (for the "L" badge when hidden).
+  const linkedPortIds = new Set<number>();
+  for (const c of rack.cables) {
+    linkedPortIds.add(c.a_port_id);
+    linkedPortIds.add(c.b_port_id);
+  }
 
   const deviceByTop = new Map<number, Device>();
   const covered = new Set<number>();
@@ -304,6 +342,8 @@ export function RackView({
           selectedPortId={selectedPortId}
           pendingPortId={pendingPortId}
           editMode={editMode}
+          linkedPortIds={linkedPortIds}
+          showCables={showCables}
           onDeviceClick={onDeviceClick}
           onPortClick={onPortClick}
           onDelete={onDeleteDevice}
@@ -326,13 +366,16 @@ export function RackView({
       </div>
       <div className="rack-frame" ref={frameRef}>
         {rows}
-        <CableLayer
-          frameRef={frameRef}
-          cables={rack.cables}
-          layoutKey={layoutKey}
-          selectedCableId={selectedCableId}
-          onSelectCable={onSelectCable}
-        />
+        {showCables && (
+          <CableLayer
+            key={`cl-${rack.id}-${overlayTick}`}
+            frameRef={frameRef}
+            cables={rack.cables}
+            layoutKey={layoutKey}
+            selectedCableId={selectedCableId}
+            onSelectCable={onSelectCable}
+          />
+        )}
       </div>
       {hover && <PortTooltip hover={hover} />}
     </div>
@@ -355,7 +398,6 @@ function CableLayer({
   onSelectCable: (id: number) => void;
 }) {
   const [paths, setPaths] = useState<CablePath[]>([]);
-  const [size, setSize] = useState({ w: 0, h: 0 });
 
   useLayoutEffect(() => {
     const frame = frameRef.current;
@@ -363,7 +405,6 @@ function CableLayer({
 
     const measure = () => {
       const fr = frame.getBoundingClientRect();
-      setSize({ w: frame.clientWidth, h: frame.clientHeight });
       const next: CablePath[] = [];
       for (const c of cables) {
         const ae = frame.querySelector(`[data-port-id="${c.a_port_id}"]`);
@@ -384,18 +425,24 @@ function CableLayer({
       setPaths(next);
     };
 
+    // This component is remounted by its parent right after the rack paints, so
+    // a plain measure here runs against a settled DOM. The observers keep the
+    // cables aligned when the rack is resized or ports re-wrap.
     measure();
+    const raf = requestAnimationFrame(measure);
     const ro = new ResizeObserver(measure);
     ro.observe(frame);
     window.addEventListener('resize', measure);
     return () => {
+      cancelAnimationFrame(raf);
       ro.disconnect();
       window.removeEventListener('resize', measure);
     };
   }, [frameRef, cables, layoutKey, selectedCableId]);
 
+  // The SVG fills the rack frame via CSS; path coordinates are in CSS pixels.
   return (
-    <svg className="cable-layer" width={size.w} height={size.h} viewBox={`0 0 ${size.w} ${size.h}`}>
+    <svg className="cable-layer" width="100%" height="100%">
       {paths.map((p) => (
         <g key={p.id}>
           <path
