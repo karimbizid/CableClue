@@ -1,26 +1,28 @@
 import { useState } from 'react';
 import { api } from '../api';
-import type { Rack } from '../types';
+import type { Vlan } from '../types';
 
 const DEFAULT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
 
 export function VlanManager({
-  rack,
+  projectId,
+  vlans,
   onClose,
   onChanged,
 }: {
-  rack: Rack;
+  projectId: number;
+  vlans: Vlan[];
   onClose: () => void;
   onChanged: () => void;
 }) {
   const [tag, setTag] = useState('');
   const [name, setName] = useState('');
-  const [color, setColor] = useState(DEFAULT_COLORS[rack.vlans.length % DEFAULT_COLORS.length]);
+  const [color, setColor] = useState(DEFAULT_COLORS[vlans.length % DEFAULT_COLORS.length]);
 
   async function add() {
     const tagNum = parseInt(tag, 10);
     if (!Number.isFinite(tagNum)) return;
-    await api.createVlan(rack.project_id, { tag: tagNum, name, color });
+    await api.createVlan(projectId, { tag: tagNum, name, color });
     setTag('');
     setName('');
     onChanged();
@@ -49,7 +51,7 @@ export function VlanManager({
               </tr>
             </thead>
             <tbody>
-              {rack.vlans.map((v) => (
+              {vlans.map((v) => (
                 <tr key={v.id}>
                   <td>{v.tag}</td>
                   <td>{v.name || <em>—</em>}</td>
@@ -61,7 +63,7 @@ export function VlanManager({
                   </td>
                 </tr>
               ))}
-              {rack.vlans.length === 0 && (
+              {vlans.length === 0 && (
                 <tr>
                   <td colSpan={4} className="muted">No VLANs yet.</td>
                 </tr>

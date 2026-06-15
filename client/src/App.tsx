@@ -479,7 +479,12 @@ export default function App() {
       </DragOverlay>
 
       {vlanOpen && rack && (
-        <VlanManager rack={rack} onClose={() => setVlanOpen(false)} onChanged={reload} />
+        <VlanManager
+          projectId={rack.project_id}
+          vlans={rack.vlans}
+          onClose={() => setVlanOpen(false)}
+          onChanged={reload}
+        />
       )}
 
       {deleteTarget && (
