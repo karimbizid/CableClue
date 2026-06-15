@@ -6,8 +6,10 @@ export interface Port {
   port_nr: number;
   vlan_id: number | null;
   ip: string;
+  mac: string;
   client: string;
   label: string;
+  notes: string;
 }
 
 export interface Device {
@@ -60,6 +62,26 @@ export interface Rack extends RackSummary {
   vlans: Vlan[];
   devices: Device[];
   cables: Cable[];
+}
+
+// One row in the project-wide admin / IP list (a port with its context).
+export interface PortRow {
+  port_id: number;
+  rack_id: number;
+  rack_name: string;
+  device_id: number;
+  device_name: string;
+  device_type: DeviceType;
+  mgmt_ip: string;
+  position_u: number;
+  port_nr: number;
+  vlan_id: number | null;
+  ip: string;
+  mac: string;
+  client: string;
+  label: string;
+  notes: string;
+  link: string;
 }
 
 // What the right-hand inspector panel is currently editing.

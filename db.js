@@ -60,8 +60,10 @@ db.exec(`
     port_nr   INTEGER NOT NULL,
     vlan_id   INTEGER REFERENCES vlans(id) ON DELETE SET NULL,
     ip        TEXT    NOT NULL DEFAULT '',
+    mac       TEXT    NOT NULL DEFAULT '',
     client    TEXT    NOT NULL DEFAULT '',
-    label     TEXT    NOT NULL DEFAULT ''
+    label     TEXT    NOT NULL DEFAULT '',
+    notes     TEXT    NOT NULL DEFAULT ''
   );
 
   CREATE TABLE IF NOT EXISTS cables (
@@ -95,6 +97,10 @@ db.transaction(() => {
     db.prepare('UPDATE racks SET project_id = ? WHERE project_id IS NULL').run(p.id);
   }
 })();
+
+// Extra port columns added for the admin / IP list view.
+if (!hasColumn('ports', 'mac')) db.exec("ALTER TABLE ports ADD COLUMN mac TEXT NOT NULL DEFAULT ''");
+if (!hasColumn('ports', 'notes')) db.exec("ALTER TABLE ports ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
 
 // Part 2: move vlans from rack-scope to project-scope by rebuilding the table.
 // This must run OUTSIDE a transaction so foreign_keys can be turned off —

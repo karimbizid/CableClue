@@ -227,8 +227,10 @@ function PortEditor({
 }) {
   const [vlanId, setVlanId] = useState<string>(port.vlan_id != null ? String(port.vlan_id) : '');
   const [ip, setIp] = useState(port.ip);
+  const [mac, setMac] = useState(port.mac);
   const [client, setClient] = useState(port.client);
   const [label, setLabel] = useState(port.label);
+  const [notes, setNotes] = useState(port.notes);
   const [saving, setSaving] = useState(false);
 
   const portIndex = useMemo(() => buildPortIndex(rack), [rack]);
@@ -240,8 +242,10 @@ function PortEditor({
       await api.updatePort(port.id, {
         vlan_id: vlanId === '' ? null : Number(vlanId),
         ip,
+        mac,
         client,
         label,
+        notes,
       });
       onReload();
     } finally {
@@ -278,12 +282,20 @@ function PortEditor({
         <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="10.0.0.10" />
       </label>
       <label>
+        MAC address
+        <input value={mac} onChange={(e) => setMac(e.target.value)} placeholder="aa:bb:cc:dd:ee:ff" />
+      </label>
+      <label>
         Client
         <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="Desktop, AP, …" />
       </label>
       <label>
         Label
         <input value={label} onChange={(e) => setLabel(e.target.value)} />
+      </label>
+      <label>
+        Notes
+        <input value={notes} onChange={(e) => setNotes(e.target.value)} />
       </label>
 
       <div className="insp-actions">

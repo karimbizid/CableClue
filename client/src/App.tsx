@@ -6,6 +6,7 @@ import { TEMPLATES } from './templates';
 import type { Device, DeviceTemplate, Port, Project, Rack, RackSummary, Selection } from './types';
 import { Library } from './components/Library';
 import { RackView } from './components/RackView';
+import { ListView } from './components/ListView';
 import { Inspector } from './components/Inspector';
 import { VlanManager } from './components/VlanManager';
 import { DeleteDeviceModal } from './components/DeleteDeviceModal';
@@ -26,6 +27,7 @@ export default function App() {
   const [libraryOpen, setLibraryOpen] = useState(true);
   const [draggingTemplate, setDraggingTemplate] = useState<DeviceTemplate | null>(null);
 
+  const [viewMode, setViewMode] = useState<'rack' | 'list'>('rack');
   const [selection, setSelection] = useState<Selection | null>(null);
   const [linkMode, setLinkMode] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -276,7 +278,10 @@ export default function App() {
           version={version}
           theme={theme}
           onToggleTheme={toggleTheme}
-          onOpen={(id) => setActiveProjectId(id)}
+          onOpen={(id) => {
+            setViewMode('rack');
+            setActiveProjectId(id);
+          }}
           onNew={newProject}
           onImport={() => setImportOpen(true)}
           onExport={exportProject}
@@ -303,7 +308,25 @@ export default function App() {
                 ← Projects
               </button>
               <span className="ws-project">{activeProject?.name}</span>
+              <span className="view-toggle">
+                <button
+                  className={viewMode === 'rack' ? 'active' : ''}
+                  onClick={() => {
+                    setViewMode('rack');
+                    reload();
+                  }}
+                >
+                  Rack
+                </button>
+                <button
+                  className={viewMode === 'list' ? 'active' : ''}
+                  onClick={() => setViewMode('list')}
+                >
+                  List
+                </button>
+              </span>
             </div>
+            {viewMode === 'rack' && (
             <nav className="tabs">
               {racks.map((r) => (
                 <div
@@ -332,6 +355,7 @@ export default function App() {
                 +
               </button>
             </nav>
+            )}
           </div>
 
           <div className="status-group">
@@ -353,6 +377,11 @@ export default function App() {
           </div>
         </header>
 
+        {viewMode === 'list' ? (
+          <div className="body">
+            <ListView projectId={activeProjectId} />
+          </div>
+        ) : (
         <div className="body">
           {libraryOpen && <Library templates={TEMPLATES} />}
           <main className="canvas">
@@ -442,6 +471,7 @@ export default function App() {
             />
           )}
         </div>
+        )}
       </div>
 
       <DragOverlay>

@@ -95,6 +95,48 @@ app.post('/api/projects/:id/racks', (req, res) => {
   res.status(201).json(getRackFull(info.lastInsertRowid));
 });
 
+// Flat, spreadsheet-style list of every port in a project (the admin view).
+app.get('/api/projects/:id/ports', (req, res) => {
+  const projectId = asInt(req.params.id);
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+
+  const vlans = db.prepare('SELECT * FROM vlans WHERE project_id = ? ORDER BY tag').all(projectId);
+
+  const rows = db
+    .prepare(
+      `SELECT p.id AS port_id, r.id AS rack_id, r.name AS rack_name,
+              d.id AS device_id, d.name AS device_name, d.type AS device_type,
+              d.mgmt_ip AS mgmt_ip, d.position_u AS position_u,
+              p.port_nr, p.vlan_id, p.ip, p.mac, p.client, p.label, p.notes
+       FROM ports p
+       JOIN devices d ON p.device_id = d.id
+       JOIN racks r   ON d.rack_id = r.id
+       WHERE r.project_id = ?
+       ORDER BY r.position, r.id, d.position_u, p.port_nr`
+    )
+    .all(projectId);
+
+  // Resolve cable links to a readable "device · pN" per port.
+  const cables = db
+    .prepare('SELECT c.* FROM cables c JOIN racks r ON c.rack_id = r.id WHERE r.project_id = ?')
+    .all(projectId);
+  const byId = new Map(rows.map((r) => [r.port_id, r]));
+  const linkByPort = new Map();
+  const desc = (r) => `${r.device_name || r.device_type} · p${r.port_nr}`;
+  for (const c of cables) {
+    const a = byId.get(c.a_port_id);
+    const b = byId.get(c.b_port_id);
+    if (a && b) {
+      if (!linkByPort.has(a.port_id)) linkByPort.set(a.port_id, desc(b));
+      if (!linkByPort.has(b.port_id)) linkByPort.set(b.port_id, desc(a));
+    }
+  }
+  for (const r of rows) r.link = linkByPort.get(r.port_id) || '';
+
+  res.json({ vlans, rows });
+});
+
 // ---------------------------------------------------------------------------
 // Racks
 // ---------------------------------------------------------------------------
@@ -231,14 +273,18 @@ app.put('/api/ports/:id', (req, res) => {
         : asInt(req.body.vlan_id, null)
       : p.vlan_id;
   const ip = req.body.ip !== undefined ? req.body.ip.toString() : p.ip;
+  const mac = req.body.mac !== undefined ? req.body.mac.toString() : p.mac;
   const client = req.body.client !== undefined ? req.body.client.toString() : p.client;
   const label = req.body.label !== undefined ? req.body.label.toString() : p.label;
+  const notes = req.body.notes !== undefined ? req.body.notes.toString() : p.notes;
 
-  db.prepare('UPDATE ports SET vlan_id = ?, ip = ?, client = ?, label = ? WHERE id = ?').run(
+  db.prepare('UPDATE ports SET vlan_id = ?, ip = ?, mac = ?, client = ?, label = ?, notes = ? WHERE id = ?').run(
     vlan_id,
     ip,
+    mac,
     client,
     label,
+    notes,
     id
   );
   res.json(db.prepare('SELECT * FROM ports WHERE id = ?').get(id));
@@ -305,8 +351,10 @@ function buildProjectExport(projectId) {
           port_nr: p.port_nr,
           vlanTag: p.vlan_id != null ? vlanTagById.get(p.vlan_id) ?? null : null,
           ip: p.ip,
+          mac: p.mac,
           client: p.client,
           label: p.label,
+          notes: p.notes,
         };
       });
       return {
@@ -383,7 +431,7 @@ function importRack(projectId, rackData, vlanByTag) {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insPort = db.prepare(
-    'INSERT INTO ports (device_id, port_nr, vlan_id, ip, client, label) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT INTO ports (device_id, port_nr, vlan_id, ip, mac, client, label, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   );
 
   const portIdByLoc = new Map(); // `${deviceIdx}:${port_nr}` -> portId
@@ -408,8 +456,10 @@ function importRack(projectId, rackData, vlanByTag) {
         asInt(p.port_nr, 0),
         vlanId,
         (p.ip || '').toString(),
+        (p.mac || '').toString(),
         (p.client || '').toString(),
-        (p.label || '').toString()
+        (p.label || '').toString(),
+        (p.notes || '').toString()
       );
       portIdByLoc.set(`${deviceIdx}:${asInt(p.port_nr, 0)}`, pInfo.lastInsertRowid);
     }

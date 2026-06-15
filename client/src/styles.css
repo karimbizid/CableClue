@@ -474,3 +474,44 @@ code {
 /* Workspace project bar (back button + project name) */
 .back-btn { white-space: nowrap; }
 .ws-project { font-weight: 600; font-size: 14px; color: var(--text); }
+
+/* ---- Rack / List view toggle ---- */
+.view-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; margin-left: 8px; }
+.view-toggle button { border: none; border-radius: 0; background: var(--panel-2); padding: 5px 14px; }
+.view-toggle button + button { border-left: 1px solid var(--line); }
+.view-toggle button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* ---- List / admin view ---- */
+.listview { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.lv-toolbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.lv-filter { width: 360px; max-width: 50%; }
+.lv-stats { color: var(--muted); font-size: 12px; margin-left: auto; }
+.lv-scroll { flex: 1; overflow: auto; }
+.lv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.lv-table th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--panel); text-align: left; padding: 9px 10px;
+  border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 500; white-space: nowrap;
+}
+.lv-table td { padding: 2px 6px; border-bottom: 1px solid var(--line); }
+.lv-table th.num, .lv-table td.num { text-align: right; font-variant-numeric: tabular-nums; width: 54px; padding-right: 12px; }
+.lv-table td.muted { color: var(--muted); white-space: nowrap; }
+.lv-table tr.rack-start td { border-top: 2px solid var(--line); }
+.lv-table tr:hover td { background: var(--panel); }
+.lv-table input, .lv-table select {
+  width: 100%; min-width: 90px; background: transparent;
+  border: 1px solid transparent; border-radius: 5px; padding: 5px 6px; color: var(--text);
+}
+.lv-table input:hover, .lv-table select:hover { border-color: var(--line); }
+.lv-table input:focus, .lv-table select:focus { border-color: var(--accent); background: var(--bg); outline: none; }
+.lv-link { white-space: nowrap; }
+.lv-empty { text-align: center; padding: 24px; }
+
+.lv-status {
+  font-size: 11px; padding: 2px 9px; border-radius: 999px; white-space: nowrap;
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+}
+.lv-status.on { color: var(--running); border-color: var(--running); }
