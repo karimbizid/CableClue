@@ -10,6 +10,8 @@ export interface Port {
   client: string;
   label: string;
   notes: string;
+  poe: string;
+  poe_cap: string;
 }
 
 export interface Device {
@@ -24,6 +26,7 @@ export interface Device {
   model: string;
   mgmt_ip: string;
   notes: string;
+  poe_budget: number;
   ports: Port[];
 }
 
@@ -73,6 +76,7 @@ export interface PortRow {
   device_name: string;
   device_type: DeviceType;
   mgmt_ip: string;
+  poe_budget: number;
   position_u: number;
   port_nr: number;
   vlan_id: number | null;
@@ -81,7 +85,16 @@ export interface PortRow {
   client: string;
   label: string;
   notes: string;
+  poe: string;
+  poe_cap: string;
   link: string;
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  message: string;
+  rack?: string;
 }
 
 // What the right-hand inspector panel is currently editing.

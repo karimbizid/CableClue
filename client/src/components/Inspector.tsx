@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { api } from '../api';
 import { MANUFACTURERS } from '../models';
+import { POE_STANDARDS, allowedFor, poeStd } from '../poe';
 import type { Cable, Device, Port, Rack, Selection } from '../types';
 
 const CUSTOM = '__custom__';
@@ -11,6 +12,8 @@ export function Inspector({
   onReload,
   onClear,
   onStartCable,
+  onStartPoe,
+  poeAssign,
   onRequestDelete,
 }: {
   rack: Rack;
@@ -18,6 +21,8 @@ export function Inspector({
   onReload: () => void;
   onClear: () => void;
   onStartCable: (portId: number, deviceId: number) => void;
+  onStartPoe: (key: string) => void;
+  poeAssign: string | null;
   onRequestDelete: (device: Device) => void;
 }) {
   const device =
@@ -48,7 +53,9 @@ export function Inspector({
           <DeviceEditor
             key={`d${device.id}`}
             device={device}
+            poeAssign={poeAssign}
             onReload={onReload}
+            onStartPoe={onStartPoe}
             onRequestDelete={onRequestDelete}
           />
         )}
@@ -72,11 +79,15 @@ export function Inspector({
 
 function DeviceEditor({
   device,
+  poeAssign,
   onReload,
+  onStartPoe,
   onRequestDelete,
 }: {
   device: Device;
+  poeAssign: string | null;
   onReload: () => void;
+  onStartPoe: (key: string) => void;
   onRequestDelete: (device: Device) => void;
 }) {
   const [name, setName] = useState(device.name);
@@ -84,7 +95,12 @@ function DeviceEditor({
   const [model, setModel] = useState(device.model);
   const [mgmtIp, setMgmtIp] = useState(device.mgmt_ip);
   const [notes, setNotes] = useState(device.notes);
+  const [poeBudget, setPoeBudget] = useState(device.poe_budget ? String(device.poe_budget) : '');
   const [saving, setSaving] = useState(false);
+
+  // How many of this device's ports currently have each PoE capability.
+  const capCounts = new Map<string, number>();
+  for (const p of device.ports) capCounts.set(p.poe_cap, (capCounts.get(p.poe_cap) ?? 0) + 1);
 
   const catalogNames = MANUFACTURERS.map((m) => m.name);
   const manuKnown = catalogNames.includes(manufacturer);
@@ -105,6 +121,7 @@ function DeviceEditor({
         model: model.trim(),
         mgmt_ip: mgmtIp,
         notes,
+        poe_budget: parseInt(poeBudget, 10) || 0,
       });
       onReload();
     } finally {
@@ -166,7 +183,12 @@ function DeviceEditor({
             {manuKnown ? (
               <select
                 value={modelSel}
-                onChange={(e) => setModel(e.target.value === CUSTOM ? ' ' : e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setModel(v === CUSTOM ? ' ' : v);
+                  const m = models.find((x) => x.name === v);
+                  if (m && m.poeBudget > 0) setPoeBudget(String(m.poeBudget));
+                }}
               >
                 <option value="">— none —</option>
                 {models.map((m) => (
@@ -186,6 +208,40 @@ function DeviceEditor({
               value={model.trim()}
               onChange={(e) => setModel(e.target.value)}
             />
+          )}
+
+          {device.type === 'switch' && (
+            <>
+              <label>
+                PoE budget (W)
+                <input
+                  type="number"
+                  value={poeBudget}
+                  onChange={(e) => setPoeBudget(e.target.value)}
+                  placeholder="e.g. 370 (0 = no PoE)"
+                />
+              </label>
+              <div className="insp-section">PoE port capabilities</div>
+              <p className="insp-hint">Pick a class, then click ports in the rack to assign it.</p>
+              <div className="poe-assign">
+                {POE_STANDARDS.map((s) => (
+                  <div className={`poe-row ${poeAssign === s.key ? 'active' : ''}`} key={s.key || 'none'}>
+                    <span
+                      className="poe-swatch"
+                      style={{ background: s.color || 'transparent', borderColor: s.color || 'var(--line)' }}
+                    />
+                    <span className="poe-name">{s.name}</span>
+                    <span className="poe-count">{capCounts.get(s.key) ?? 0}</span>
+                    <button
+                      className={`poe-assign-btn ${poeAssign === s.key ? 'active' : ''}`}
+                      onClick={() => onStartPoe(s.key)}
+                    >
+                      {poeAssign === s.key ? 'Assigning…' : 'Assign'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
           <label>
@@ -231,6 +287,7 @@ function PortEditor({
   const [client, setClient] = useState(port.client);
   const [label, setLabel] = useState(port.label);
   const [notes, setNotes] = useState(port.notes);
+  const [poe, setPoe] = useState(port.poe);
   const [saving, setSaving] = useState(false);
 
   const portIndex = useMemo(() => buildPortIndex(rack), [rack]);
@@ -246,6 +303,7 @@ function PortEditor({
         client,
         label,
         notes,
+        poe,
       });
       onReload();
     } finally {
@@ -285,6 +343,18 @@ function PortEditor({
         MAC address
         <input value={mac} onChange={(e) => setMac(e.target.value)} placeholder="aa:bb:cc:dd:ee:ff" />
       </label>
+      {device.type === 'switch' && (
+        <label>
+          PoE (used){port.poe_cap ? <span className="insp-sub"> · port supports {poeStd(port.poe_cap)?.name}</span> : null}
+          <select value={poe} onChange={(e) => setPoe(e.target.value)}>
+            {allowedFor(port.poe_cap).map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label>
         Client
         <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="Desktop, AP, …" />

@@ -1,4 +1,4 @@
-import type { Cable, Device, Port, PortRow, Project, Rack, RackSummary, Vlan } from './types';
+import type { Cable, Device, Notification, Port, PortRow, Project, Rack, RackSummary, Vlan } from './types';
 
 async function req<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -33,6 +33,8 @@ export const api = {
   // Project-wide admin / IP list
   listPorts: (projectId: number) =>
     req<{ vlans: Vlan[]; rows: PortRow[] }>(`/api/projects/${projectId}/ports`),
+  listNotifications: (projectId: number) =>
+    req<Notification[]>(`/api/projects/${projectId}/notifications`),
 
   // Racks (scoped to a project)
   listRacks: (projectId: number) => req<RackSummary[]>(`/api/projects/${projectId}/racks`),
@@ -65,7 +67,7 @@ export const api = {
   // Ports
   updatePort: (
     id: number,
-    patch: Partial<Pick<Port, 'vlan_id' | 'ip' | 'mac' | 'client' | 'label' | 'notes'>>
+    patch: Partial<Pick<Port, 'vlan_id' | 'ip' | 'mac' | 'client' | 'label' | 'notes' | 'poe' | 'poe_cap'>>
   ) =>
     req<Port>(`/api/ports/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
 

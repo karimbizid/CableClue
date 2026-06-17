@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" font-family="-apple-system, Segoe UI, Roboto, sans-serif">
+  <rect width="960" height="540" fill="#0d1117"/>
+  <!-- top bar -->
+  <rect width="960" height="64" fill="#161b22"/>
+  <rect x="16" y="10" width="44" height="44" rx="22" fill="#34506b"/>
+  <text x="70" y="38" fill="#c9d1d9" font-size="15" font-weight="700">CableClue</text>
+  <text x="200" y="26" fill="#8b949e" font-size="11">← Projects · My project</text>
+  <rect x="200" y="34" width="86" height="22" rx="6" fill="#58a6ff"/>
+  <text x="214" y="49" fill="#fff" font-size="12">OTA RACK</text>
+  <text x="860" y="38" fill="#8b949e" font-size="12">v0.5.9</text>
+  <circle cx="905" cy="33" r="9" fill="none" stroke="#f85149" stroke-width="1.5"/>
+  <circle cx="911" cy="27" r="3" fill="#f85149"/>
+  <!-- toolbar -->
+  <rect x="0" y="64" width="960" height="36" fill="#161b22"/>
+  <g font-size="11" fill="#c9d1d9">
+    <rect x="60" y="72" width="78" height="20" rx="5" fill="#1c2330" stroke="#2a3340"/><text x="70" y="86">✥ Edit</text>
+    <rect x="146" y="72" width="84" height="20" rx="5" fill="#1c2330" stroke="#2a3340"/><text x="156" y="86">🔌 Link</text>
+    <rect x="238" y="72" width="92" height="20" rx="5" fill="#58a6ff"/><text x="248" y="86" fill="#fff">〰 Cables: on</text>
+    <rect x="338" y="72" width="74" height="20" rx="5" fill="#1c2330" stroke="#2a3340"/><text x="348" y="86">VLANs (3)</text>
+  </g>
+  <!-- library -->
+  <rect x="0" y="100" width="180" height="440" fill="#161b22"/>
+  <text x="16" y="124" fill="#c9d1d9" font-size="13" font-weight="600">Library</text>
+  <g font-size="11">
+    <rect x="14" y="136" width="150" height="26" rx="6" fill="#1c2330" stroke="#2a3340"/><rect x="14" y="136" width="3" height="26" fill="#2563eb"/><text x="24" y="153" fill="#c9d1d9">Switch 24p</text><text x="140" y="153" fill="#8b949e">1U</text>
+    <rect x="14" y="166" width="150" height="26" rx="6" fill="#1c2330" stroke="#2a3340"/><rect x="14" y="166" width="3" height="26" fill="#2563eb"/><text x="24" y="183" fill="#c9d1d9">Switch 48p</text><text x="140" y="183" fill="#8b949e">1U</text>
+    <rect x="14" y="196" width="150" height="26" rx="6" fill="#1c2330" stroke="#2a3340"/><rect x="14" y="196" width="3" height="26" fill="#0d9488"/><text x="24" y="213" fill="#c9d1d9">Patch 24p</text><text x="140" y="213" fill="#8b949e">1U</text>
+  </g>
+  <!-- rack -->
+  <text x="200" y="124" fill="#c9d1d9" font-size="13" font-weight="600">OTA RACK <tspan fill="#8b949e" font-weight="400">42U</tspan></text>
+  <rect x="200" y="134" width="540" height="396" rx="8" fill="#0c0e12" stroke="#2a3340" stroke-width="2"/>
+  <!-- a switch faceplate -->
+  <g>
+    <rect x="202" y="150" width="536" height="52" fill="#1b1f27"/><rect x="202" y="150" width="4" height="52" fill="#2563eb"/>
+    <circle cx="218" cy="166" r="3.5" fill="#22c55e"/><circle cx="218" cy="178" r="3.5" fill="#f59e0b"/>
+    <text x="230" y="170" fill="#e6e9ef" font-size="12" font-weight="600">Switch A</text><text x="230" y="186" fill="#8b949e" font-size="9">SWITCH · 10.0.0.2</text>
+    <g>
+      <!-- two rows of jacks -->
+      <g fill="#11151c" stroke="#3a414f">
+        <rect x="370" y="156" width="17" height="13" rx="2"/><rect x="392" y="156" width="17" height="13" rx="2"/><rect x="414" y="156" width="17" height="13" rx="2" fill="#378add" stroke="#378add"/><rect x="436" y="156" width="17" height="13" rx="2"/><rect x="458" y="156" width="17" height="13" rx="2" fill="#1d9e75" stroke="#1d9e75"/><rect x="480" y="156" width="17" height="13" rx="2"/><rect x="502" y="156" width="17" height="13" rx="2"/><rect x="524" y="156" width="17" height="13" rx="2" fill="#378add" stroke="#378add"/><rect x="546" y="156" width="17" height="13" rx="2"/><rect x="568" y="156" width="17" height="13" rx="2"/><rect x="590" y="156" width="17" height="13" rx="2"/><rect x="612" y="156" width="17" height="13" rx="2"/>
+        <rect x="370" y="180" width="17" height="13" rx="2"/><rect x="392" y="180" width="17" height="13" rx="2" fill="#ef9f27" stroke="#ef9f27"/><rect x="414" y="180" width="17" height="13" rx="2"/><rect x="436" y="180" width="17" height="13" rx="2"/><rect x="458" y="180" width="17" height="13" rx="2"/><rect x="480" y="180" width="17" height="13" rx="2"/><rect x="502" y="180" width="17" height="13" rx="2"/><rect x="524" y="180" width="17" height="13" rx="2"/><rect x="546" y="180" width="17" height="13" rx="2"/><rect x="568" y="180" width="17" height="13" rx="2"/><rect x="590" y="180" width="17" height="13" rx="2"/><rect x="612" y="180" width="17" height="13" rx="2"/>
+      </g>
+    </g>
+  </g>
+  <!-- patch -->
+  <rect x="202" y="204" width="536" height="50" fill="#102a28"/><rect x="202" y="204" width="4" height="50" fill="#0d9488"/>
+  <text x="230" y="226" fill="#e6e9ef" font-size="12" font-weight="600">Patch field 1</text><text x="230" y="240" fill="#8b949e" font-size="9">PATCH</text>
+  <!-- blind -->
+  <rect x="202" y="256" width="536" height="26" fill="#161a21"/><rect x="202" y="256" width="4" height="26" fill="#4b5563"/>
+  <text x="230" y="272" fill="#8b949e" font-size="11" font-style="italic">Blind panel</text>
+  <!-- empty slots -->
+  <g fill="#5a6270" font-size="10">
+    <line x1="202" y1="310" x2="738" y2="310" stroke="#20242e" stroke-dasharray="3 3"/><text x="214" y="300">38 empty</text>
+    <line x1="202" y1="348" x2="738" y2="348" stroke="#20242e" stroke-dasharray="3 3"/><text x="214" y="338">37 empty</text>
+  </g>
+  <!-- cable arc on the right -->
+  <path d="M 629 162 C 700 180, 700 220, 629 230" fill="none" stroke="#e3b341" stroke-width="2.5"/>
+  <!-- inspector -->
+  <rect x="760" y="100" width="200" height="440" fill="#161b22"/>
+  <text x="776" y="124" fill="#8b949e" font-size="11">INSPECTOR</text>
+  <text x="776" y="150" fill="#c9d1d9" font-size="14" font-weight="600">Switch A</text>
+  <g font-size="11" fill="#8b949e">
+    <text x="776" y="178">Name</text><rect x="776" y="184" width="168" height="24" rx="5" fill="#0d1117" stroke="#2a3340"/>
+    <text x="776" y="226">PoE budget (W)</text><rect x="776" y="232" width="168" height="24" rx="5" fill="#0d1117" stroke="#2a3340"/>
+    <text x="776" y="274">PoE capabilities</text>
+    <rect x="776" y="282" width="168" height="22" rx="5" fill="#1c2330" stroke="#a371f7"/><circle cx="788" cy="293" r="5" fill="#a371f7"/><text x="800" y="297" fill="#c9d1d9">PoE++ T3</text>
+  </g>
+</svg>

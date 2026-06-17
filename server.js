@@ -22,6 +22,9 @@ function asInt(v, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+// PoE provisioning per standard (watts at the switch port).
+const POE_WATTS = { af: 15.4, at: 30, bt3: 60, bt4: 90 };
+
 // Full nested representation of a rack: devices (with ports) plus the parent
 // project's VLAN pool. This is what a rack tab loads.
 function getRackFull(rackId) {
@@ -107,8 +110,8 @@ app.get('/api/projects/:id/ports', (req, res) => {
     .prepare(
       `SELECT p.id AS port_id, r.id AS rack_id, r.name AS rack_name,
               d.id AS device_id, d.name AS device_name, d.type AS device_type,
-              d.mgmt_ip AS mgmt_ip, d.position_u AS position_u,
-              p.port_nr, p.vlan_id, p.ip, p.mac, p.client, p.label, p.notes
+              d.mgmt_ip AS mgmt_ip, d.position_u AS position_u, d.poe_budget AS poe_budget,
+              p.port_nr, p.vlan_id, p.ip, p.mac, p.client, p.label, p.notes, p.poe, p.poe_cap
        FROM ports p
        JOIN devices d ON p.device_id = d.id
        JOIN racks r   ON d.rack_id = r.id
@@ -135,6 +138,38 @@ app.get('/api/projects/:id/ports', (req, res) => {
   for (const r of rows) r.link = linkByPort.get(r.port_id) || '';
 
   res.json({ vlans, rows });
+});
+
+// Project notifications. Currently: switches whose summed PoE draw exceeds the
+// configured PoE budget.
+app.get('/api/projects/:id/notifications', (req, res) => {
+  const projectId = asInt(req.params.id);
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+
+  const switches = db
+    .prepare(
+      `SELECT d.id, d.name, d.poe_budget, r.name AS rack_name
+       FROM devices d JOIN racks r ON d.rack_id = r.id
+       WHERE r.project_id = ? AND d.type = 'switch' AND d.poe_budget > 0`
+    )
+    .all(projectId);
+  const portsOf = db.prepare('SELECT poe FROM ports WHERE device_id = ?');
+
+  const notifications = [];
+  for (const d of switches) {
+    let draw = 0;
+    for (const p of portsOf.all(d.id)) draw += POE_WATTS[p.poe] || 0;
+    if (draw > d.poe_budget) {
+      notifications.push({
+        id: `poe-${d.id}`,
+        type: 'poe',
+        message: `Switch ${d.name || '(unnamed)'} over PoE budget (${Math.round(draw * 10) / 10}W / ${d.poe_budget}W)`,
+        rack: d.rack_name,
+      });
+    }
+  }
+  res.json(notifications);
 });
 
 // ---------------------------------------------------------------------------
@@ -241,11 +276,12 @@ app.put('/api/devices/:id', (req, res) => {
   const next = {};
   for (const f of fields) next[f] = req.body[f] !== undefined ? req.body[f].toString() : d[f];
   const position_u = req.body.position_u !== undefined ? asInt(req.body.position_u, d.position_u) : d.position_u;
+  const poe_budget = req.body.poe_budget !== undefined ? asInt(req.body.poe_budget, d.poe_budget) : d.poe_budget;
 
   db.prepare(
-    `UPDATE devices SET name = ?, manufacturer = ?, model = ?, mgmt_ip = ?, notes = ?, position_u = ?
+    `UPDATE devices SET name = ?, manufacturer = ?, model = ?, mgmt_ip = ?, notes = ?, position_u = ?, poe_budget = ?
      WHERE id = ?`
-  ).run(next.name, next.manufacturer, next.model, next.mgmt_ip, next.notes, position_u, id);
+  ).run(next.name, next.manufacturer, next.model, next.mgmt_ip, next.notes, position_u, poe_budget, id);
 
   const updated = db.prepare('SELECT * FROM devices WHERE id = ?').get(id);
   updated.ports = db.prepare('SELECT * FROM ports WHERE device_id = ? ORDER BY port_nr').all(id);
@@ -277,16 +313,12 @@ app.put('/api/ports/:id', (req, res) => {
   const client = req.body.client !== undefined ? req.body.client.toString() : p.client;
   const label = req.body.label !== undefined ? req.body.label.toString() : p.label;
   const notes = req.body.notes !== undefined ? req.body.notes.toString() : p.notes;
+  const poe = req.body.poe !== undefined ? req.body.poe.toString() : p.poe;
+  const poe_cap = req.body.poe_cap !== undefined ? req.body.poe_cap.toString() : p.poe_cap;
 
-  db.prepare('UPDATE ports SET vlan_id = ?, ip = ?, mac = ?, client = ?, label = ?, notes = ? WHERE id = ?').run(
-    vlan_id,
-    ip,
-    mac,
-    client,
-    label,
-    notes,
-    id
-  );
+  db.prepare(
+    'UPDATE ports SET vlan_id = ?, ip = ?, mac = ?, client = ?, label = ?, notes = ?, poe = ?, poe_cap = ? WHERE id = ?'
+  ).run(vlan_id, ip, mac, client, label, notes, poe, poe_cap, id);
   res.json(db.prepare('SELECT * FROM ports WHERE id = ?').get(id));
 });
 
@@ -355,6 +387,8 @@ function buildProjectExport(projectId) {
           client: p.client,
           label: p.label,
           notes: p.notes,
+          poe: p.poe,
+          poe_cap: p.poe_cap,
         };
       });
       return {
@@ -367,6 +401,7 @@ function buildProjectExport(projectId) {
         model: d.model,
         mgmt_ip: d.mgmt_ip,
         notes: d.notes,
+        poe_budget: d.poe_budget,
         ports: exportedPorts,
       };
     });
@@ -427,11 +462,11 @@ function importRack(projectId, rackData, vlanByTag) {
   const rackId = rackInfo.lastInsertRowid;
 
   const insDevice = db.prepare(
-    `INSERT INTO devices (rack_id, type, port_count, size_u, position_u, name, manufacturer, model, mgmt_ip, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO devices (rack_id, type, port_count, size_u, position_u, name, manufacturer, model, mgmt_ip, notes, poe_budget)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insPort = db.prepare(
-    'INSERT INTO ports (device_id, port_nr, vlan_id, ip, mac, client, label, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO ports (device_id, port_nr, vlan_id, ip, mac, client, label, notes, poe, poe_cap) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
 
   const portIdByLoc = new Map(); // `${deviceIdx}:${port_nr}` -> portId
@@ -446,7 +481,8 @@ function importRack(projectId, rackData, vlanByTag) {
       (d.manufacturer || '').toString(),
       (d.model || '').toString(),
       (d.mgmt_ip || '').toString(),
-      (d.notes || '').toString()
+      (d.notes || '').toString(),
+      asInt(d.poe_budget, 0)
     );
     const deviceId = devInfo.lastInsertRowid;
     for (const p of d.ports || []) {
@@ -459,7 +495,9 @@ function importRack(projectId, rackData, vlanByTag) {
         (p.mac || '').toString(),
         (p.client || '').toString(),
         (p.label || '').toString(),
-        (p.notes || '').toString()
+        (p.notes || '').toString(),
+        (p.poe || '').toString(),
+        (p.poe_cap || '').toString()
       );
       portIdByLoc.set(`${deviceIdx}:${asInt(p.port_nr, 0)}`, pInfo.lastInsertRowid);
     }

@@ -51,7 +51,8 @@ db.exec(`
     manufacturer TEXT    NOT NULL DEFAULT '',
     model        TEXT    NOT NULL DEFAULT '',
     mgmt_ip      TEXT    NOT NULL DEFAULT '',
-    notes        TEXT    NOT NULL DEFAULT ''
+    notes        TEXT    NOT NULL DEFAULT '',
+    poe_budget   INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS ports (
@@ -63,7 +64,9 @@ db.exec(`
     mac       TEXT    NOT NULL DEFAULT '',
     client    TEXT    NOT NULL DEFAULT '',
     label     TEXT    NOT NULL DEFAULT '',
-    notes     TEXT    NOT NULL DEFAULT ''
+    notes     TEXT    NOT NULL DEFAULT '',
+    poe       TEXT    NOT NULL DEFAULT '',
+    poe_cap   TEXT    NOT NULL DEFAULT ''
   );
 
   CREATE TABLE IF NOT EXISTS cables (
@@ -101,6 +104,10 @@ db.transaction(() => {
 // Extra port columns added for the admin / IP list view.
 if (!hasColumn('ports', 'mac')) db.exec("ALTER TABLE ports ADD COLUMN mac TEXT NOT NULL DEFAULT ''");
 if (!hasColumn('ports', 'notes')) db.exec("ALTER TABLE ports ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
+// PoE: per-endpoint used standard, per-port capability, per-device budget.
+if (!hasColumn('ports', 'poe')) db.exec("ALTER TABLE ports ADD COLUMN poe TEXT NOT NULL DEFAULT ''");
+if (!hasColumn('ports', 'poe_cap')) db.exec("ALTER TABLE ports ADD COLUMN poe_cap TEXT NOT NULL DEFAULT ''");
+if (!hasColumn('devices', 'poe_budget')) db.exec('ALTER TABLE devices ADD COLUMN poe_budget INTEGER NOT NULL DEFAULT 0');
 
 // Part 2: move vlans from rack-scope to project-scope by rebuilding the table.
 // This must run OUTSIDE a transaction so foreign_keys can be turned off —
@@ -133,6 +140,21 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_vlans_project  ON vlans(project_id);
   CREATE INDEX IF NOT EXISTS idx_cables_rack    ON cables(rack_id);
 `);
+
+// One-time flip so U1 is the TOP slot (rack numbering used to count down).
+// Existing devices are mirrored vertically so their visual position is kept:
+// new position_u = height_u - old_position_u - size_u + 2.
+const SCHEMA_VERSION = 2;
+if (db.pragma('user_version', { simple: true }) < SCHEMA_VERSION) {
+  db.exec(`
+    UPDATE devices SET position_u = (
+      SELECT r.height_u - devices.position_u - devices.size_u + 2
+      FROM racks r WHERE r.id = devices.rack_id
+    )
+    WHERE EXISTS (SELECT 1 FROM racks r WHERE r.id = devices.rack_id);
+  `);
+  db.pragma(`user_version = ${SCHEMA_VERSION}`);
+}
 
 // Guarantee there is always at least one project to land in.
 const projectCount = db.prepare('SELECT COUNT(*) AS c FROM projects').get().c;

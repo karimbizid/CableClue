@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import type { Cable, Device, Port, Rack, Vlan } from '../types';
+import { poeStd } from '../poe';
 
 const ROW_H = 54; // pixels per rack unit
 
@@ -26,6 +27,7 @@ function Jack({
   pending,
   editMode,
   linkBadge,
+  poeColor,
   onClick,
   onHover,
   onLeave,
@@ -38,11 +40,22 @@ function Jack({
   pending: boolean;
   editMode: boolean;
   linkBadge: boolean;
+  poeColor: string | undefined;
   onClick: () => void;
   onHover: (e: MouseEvent) => void;
   onLeave: () => void;
 }) {
   const occupied = Boolean(port.client || port.ip);
+  // In PoE mode the jack body is tinted by its PoE capability (undefined = not
+  // in PoE mode → fall back to the VLAN colour).
+  const bodyStyle =
+    poeColor !== undefined
+      ? poeColor
+        ? { fill: poeColor, stroke: poeColor }
+        : undefined
+      : vlan
+      ? { fill: vlan.color, stroke: vlan.color }
+      : undefined;
 
   return (
     <button
@@ -71,7 +84,7 @@ function Jack({
           height="13"
           rx="1.6"
           strokeWidth="1"
-          style={vlan ? { fill: vlan.color, stroke: vlan.color } : undefined}
+          style={bodyStyle}
         />
         {/* gold contacts */}
         <g stroke="#caa24a" strokeWidth="0.7" opacity={vlan ? 0.85 : 0.55}>
@@ -109,6 +122,7 @@ function DeviceFace({
   editMode,
   linkedPortIds,
   showCables,
+  poeMode,
   onDeviceClick,
   onPortClick,
   onDelete,
@@ -122,6 +136,7 @@ function DeviceFace({
   editMode: boolean;
   linkedPortIds: Set<number>;
   showCables: boolean;
+  poeMode: boolean;
   onDeviceClick: (d: Device) => void;
   onPortClick: (p: Port, d: Device) => void;
   onDelete: (id: number) => void;
@@ -201,6 +216,7 @@ function DeviceFace({
                   pending={col.topPort.id === pendingPortId}
                   editMode={editMode}
                   linkBadge={!showCables && linkedPortIds.has(col.topPort.id)}
+                  poeColor={poeMode ? poeStd(col.topPort.poe_cap)?.color ?? '' : undefined}
                   onClick={() => onPortClick(col.topPort!, device)}
                   onHover={hoverHandler(col.topPort)}
                   onLeave={() => setHover(null)}
@@ -218,6 +234,7 @@ function DeviceFace({
                   pending={col.botPort.id === pendingPortId}
                   editMode={editMode}
                   linkBadge={!showCables && linkedPortIds.has(col.botPort.id)}
+                  poeColor={poeMode ? poeStd(col.botPort.poe_cap)?.color ?? '' : undefined}
                   onClick={() => onPortClick(col.botPort!, device)}
                   onHover={hoverHandler(col.botPort)}
                   onLeave={() => setHover(null)}
@@ -277,6 +294,7 @@ export function RackView({
   linkMode,
   editMode,
   showCables,
+  poeMode,
   onDeviceClick,
   onPortClick,
   onDeleteDevice,
@@ -290,6 +308,7 @@ export function RackView({
   linkMode: boolean;
   editMode: boolean;
   showCables: boolean;
+  poeMode: boolean;
   onDeviceClick: (d: Device) => void;
   onPortClick: (p: Port, d: Device) => void;
   onDeleteDevice: (id: number) => void;
@@ -321,17 +340,17 @@ export function RackView({
     linkedPortIds.add(c.b_port_id);
   }
 
-  const deviceByTop = new Map<number, Device>();
+  // U1 is the top slot. A device starts at its position_u and spans downward.
+  const deviceByStart = new Map<number, Device>();
   const covered = new Set<number>();
   for (const d of rack.devices) {
-    const top = d.position_u + d.size_u - 1;
-    deviceByTop.set(top, d);
-    for (let u = d.position_u; u <= top; u++) covered.add(u);
+    deviceByStart.set(d.position_u, d);
+    for (let u = d.position_u; u <= d.position_u + d.size_u - 1; u++) covered.add(u);
   }
 
   const rows: JSX.Element[] = [];
-  for (let u = rack.height_u; u >= 1; u--) {
-    const dev = deviceByTop.get(u);
+  for (let u = 1; u <= rack.height_u; u++) {
+    const dev = deviceByStart.get(u);
     if (dev) {
       rows.push(
         <DeviceFace
@@ -344,6 +363,7 @@ export function RackView({
           editMode={editMode}
           linkedPortIds={linkedPortIds}
           showCables={showCables}
+          poeMode={poeMode}
           onDeviceClick={onDeviceClick}
           onPortClick={onPortClick}
           onDelete={onDeleteDevice}
@@ -360,7 +380,7 @@ export function RackView({
   const layoutKey = rack.devices.map((d) => `${d.id}:${d.position_u}:${d.size_u}`).join('|');
 
   return (
-    <div className={`rack ${linkMode ? 'link-mode' : ''}`}>
+    <div className={`rack ${linkMode || poeMode ? 'link-mode' : ''}`}>
       <div className="rack-title">
         {rack.name} <span className="rack-sub">{rack.height_u}U</span>
       </div>

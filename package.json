@@ -1,6 +1,6 @@
 {
   "name": "cableclue",
-  "version": "0.5.7",
+  "version": "0.5.9",
   "description": "Web UI to administer racks with network switches and patch panels",
   "main": "server.js",
   "type": "commonjs",

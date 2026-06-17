@@ -3,7 +3,8 @@ import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { api } from './api';
 import { TEMPLATES } from './templates';
-import type { Device, DeviceTemplate, Port, Project, Rack, RackSummary, Selection } from './types';
+import { poeStd } from './poe';
+import type { Device, DeviceTemplate, Notification, Port, Project, Rack, RackSummary, Selection } from './types';
 import { Library } from './components/Library';
 import { RackView } from './components/RackView';
 import { ListView } from './components/ListView';
@@ -33,12 +34,17 @@ export default function App() {
   const [editMode, setEditMode] = useState(false);
   const [showCables, setShowCables] = useState(true);
   const [pendingPort, setPendingPort] = useState<{ portId: number; deviceId: number } | null>(null);
+  const [poeAssign, setPoeAssign] = useState<string | null>(null);
   const [vlanOpen, setVlanOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Device | null>(null);
   const [importOpen, setImportOpen] = useState(false);
 
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [version, setVersion] = useState('');
+
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifTick, setNotifTick] = useState(0);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -106,11 +112,23 @@ export default function App() {
     if (activeId != null) loadRack(activeId);
     setSelection(null);
     setPendingPort(null);
+    setPoeAssign(null);
   }, [activeId, loadRack]);
 
   const reload = useCallback(() => {
     if (activeId != null) loadRack(activeId);
+    setNotifTick((t) => t + 1);
   }, [activeId, loadRack]);
+
+  // Project notifications (e.g. PoE over budget). Refetched on project change
+  // and whenever data is edited (notifTick bumps).
+  useEffect(() => {
+    if (activeProjectId == null) {
+      setNotifications([]);
+      return;
+    }
+    api.listNotifications(activeProjectId).then(setNotifications).catch(() => {});
+  }, [activeProjectId, notifTick]);
 
   // ----- Project actions -------------------------------------------------
   async function newProject() {
@@ -174,6 +192,13 @@ export default function App() {
     setSelection({ type: 'device', id: d.id });
   }
   async function onPortClick(p: Port, d: Device) {
+    if (poeAssign !== null) {
+      if (d.type === 'switch') {
+        await api.updatePort(p.id, { poe_cap: poeAssign });
+        reload();
+      }
+      return;
+    }
     if (linkMode) {
       if (!pendingPort) {
         setPendingPort({ portId: p.id, deviceId: d.id });
@@ -198,11 +223,19 @@ export default function App() {
   function toggleLinkMode() {
     setLinkMode((v) => !v);
     setEditMode(false);
+    setPoeAssign(null);
     setPendingPort(null);
   }
   function toggleEditMode() {
     setEditMode((v) => !v);
     setLinkMode(false);
+    setPoeAssign(null);
+    setPendingPort(null);
+  }
+  function startPoe(key: string) {
+    setPoeAssign(key);
+    setLinkMode(false);
+    setEditMode(false);
     setPendingPort(null);
   }
 
@@ -359,6 +392,40 @@ export default function App() {
           </div>
 
           <div className="status-group">
+            <div className="bell-wrap">
+              <button
+                className={`bell ${notifications.length ? 'has' : ''}`}
+                onClick={() => setNotifOpen((o) => !o)}
+                title="Notifications"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+                </svg>
+                {notifications.length > 0 && <span className="bell-dot" />}
+              </button>
+              {notifOpen && (
+                <div className="notif-panel">
+                  <div className="notif-head">
+                    Notifications
+                    <button className="modal-close" onClick={() => setNotifOpen(false)}>×</button>
+                  </div>
+                  {notifications.length === 0 ? (
+                    <div className="notif-empty">Nothing to report.</div>
+                  ) : (
+                    notifications.map((n) => (
+                      <div key={n.id} className="notif-item">
+                        <span className="notif-dot" />
+                        <span>
+                          {n.message}
+                          {n.rack ? <span className="notif-rack"> · {n.rack}</span> : null}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             {version && <span className="version">v{version}</span>}
             <a
               className="gh-link"
@@ -379,7 +446,11 @@ export default function App() {
 
         {viewMode === 'list' ? (
           <div className="body">
-            <ListView projectId={activeProjectId} />
+            <ListView
+              projectId={activeProjectId}
+              projectName={activeProject?.name || 'Project'}
+              onChanged={() => setNotifTick((t) => t + 1)}
+            />
           </div>
         ) : (
         <div className="body">
@@ -412,6 +483,14 @@ export default function App() {
               </button>
               {editMode && (
                 <span className="link-banner edit">Drag any device to reposition it in the rack.</span>
+              )}
+              {poeAssign !== null && (
+                <span className="link-banner poe">
+                  Assigning <b>{poeStd(poeAssign)?.name ?? 'PoE'}</b> capability — click switch ports
+                  <button className="link-cancel" onClick={() => setPoeAssign(null)}>
+                    Done
+                  </button>
+                </span>
               )}
               {linkMode && (
                 <span className="link-banner">
@@ -447,6 +526,7 @@ export default function App() {
                   linkMode={linkMode}
                   editMode={editMode}
                   showCables={showCables}
+                  poeMode={poeAssign !== null}
                   onDeviceClick={selectDevice}
                   onPortClick={onPortClick}
                   onDeleteDevice={(id) => {
@@ -467,6 +547,8 @@ export default function App() {
               onReload={reload}
               onClear={() => setSelection(null)}
               onStartCable={startLinkFromPort}
+              onStartPoe={startPoe}
+              poeAssign={poeAssign}
               onRequestDelete={(d) => setDeleteTarget(d)}
             />
           )}
